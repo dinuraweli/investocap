@@ -1,0 +1,38 @@
+# InvestoCap
+
+Track the Colombo Stock Exchange (CSE): delayed live prices, charts, watchlists and a personal portfolio with P&L. Responsive web app.
+
+**Stack:** Next.js 16 (App Router) · TypeScript · Tailwind 4 · Supabase (Auth + Postgres with row-level security)
+
+> Prices come from the unofficial cse.lk API and may be delayed. For information only, not investment advice.
+
+## Getting started
+
+```bash
+npm install
+cp .env.example .env.local   # then fill in the values (see below)
+npm run dev                  # http://localhost:3000
+```
+
+### Environment (`.env.local`, never committed)
+| Variable | What |
+|---|---|
+| `SUPABASE_URL` | Your Supabase project URL |
+| `SUPABASE_PUBLISHABLE_KEY` | Publishable (anon) key. Used with each user's session, so row-level security applies |
+| `SUPABASE_SERVICE_ROLE_KEY` | **Secret**, server only. Used for the shared market-data cache |
+| `CRON_SECRET` | Protects `POST /api/cron/eod` |
+
+### Database
+Schema lives in Supabase (user tables with RLS: `watchlists`, `watchlist_items`, `transactions`; server-only cache tables: `instruments`, `daily_prices`, `index_daily`, `kv`). In the Supabase dashboard, turn **Confirm email** off for local development (the built-in email sender is heavily rate-limited), and enable leaked-password protection.
+
+### Commands
+| | |
+|---|---|
+| `npm run dev` | Dev server |
+| `npm run build` | Production build |
+| `npm test` | Portfolio maths unit tests |
+| `npm run verify:cse` | Live contract check against cse.lk (fails loudly if the API shape changes) |
+
+Schedule `POST /api/cron/eod` with `Authorization: Bearer $CRON_SECRET` after 14:30 Sri Lanka time to record daily closes (CSE only serves one year of history).
+
+See [API.md](API.md) for the HTTP API.
