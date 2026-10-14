@@ -92,3 +92,9 @@ export async function deleteTransaction(db: Db, id: number): Promise<boolean> {
   const rows = check(await db.from("transactions").delete().eq("id", id).select("id")) as unknown[];
   return rows.length > 0;
 }
+
+/** Insert several transactions in one request (all-or-nothing). */
+export async function insertTransactions(db: Db, rows: Omit<TxRecord, "id">[]): Promise<void> {
+  if (rows.length === 0) return;
+  check(await db.from("transactions").insert(rows.map((t) => ({ symbol: t.symbol, side: t.side, quantity: t.quantity, price: t.price, fees: t.fees, traded_on: t.tradedOn, note: t.note }))));
+}

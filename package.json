@@ -14,7 +14,8 @@
     "@supabase/supabase-js": "^2.117.3",
     "next": "16.4.0",
     "react": "19.3.0",
-    "react-dom": "19.3.0"
+    "react-dom": "19.3.0",
+    "read-excel-file": "^9.3.12"
   },
   "devDependencies": {
     "@tailwindcss/turbopack": "^4",

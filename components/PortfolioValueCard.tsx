@@ -9,7 +9,7 @@ import { CardHeader, MoreButton, Segmented, Skeleton } from "./ui";
 
 const RANGES = ["1W", "1M", "3M", "1Y", "All"] as const;
 
-export default function PortfolioValueCard({ portfolio, market }: { portfolio: PortfolioResponse | null; market: MarketResponse | null }) {
+export default function PortfolioValueCard({ portfolio, market, onImport }: { portfolio: PortfolioResponse | null; market: MarketResponse | null; onImport: () => void }) {
   const [range, setRange] = useState<(typeof RANGES)[number]>("1M");
   const { openTrade } = useTrade();
   const hist = useApi<PortfolioHistoryResponse>(`/api/portfolio/history?range=${range.toUpperCase()}`, { refreshMs: 60000 });
@@ -47,7 +47,10 @@ export default function PortfolioValueCard({ portfolio, market }: { portfolio: P
             <div>
               <p className="font-semibold">No holdings yet</p>
               <p className="mx-auto mt-1 max-w-xs text-sm text-muted">Record the trades you have made and InvestoCap will track their value, gains and allocation.</p>
-              <button onClick={() => openTrade()} className="mt-4 h-10 rounded-xl bg-brand px-5 text-sm font-semibold text-white hover:opacity-90">Add your first trade</button>
+              <div className="mt-4 flex flex-wrap justify-center gap-2">
+                <button onClick={onImport} className="h-10 rounded-xl bg-brand px-5 text-sm font-semibold text-white hover:opacity-90">Import from ATrad</button>
+                <button onClick={() => openTrade()} className="h-10 rounded-xl border border-line bg-surface px-5 text-sm font-semibold hover:bg-subtle">Add a trade</button>
+              </div>
             </div>
           </div>
         ) : hist.loading || !portfolio ? <Skeleton className="h-[240px] sm:h-[280px]" /> : points.length < 2 ? <div className="grid h-[240px] place-items-center rounded-xl bg-subtle px-6 text-center text-sm text-muted sm:h-[280px]">Your chart fills in as trading days pass. It needs at least two days of prices for what you hold.</div> : <AreaChart points={points} />}

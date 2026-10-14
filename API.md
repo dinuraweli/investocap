@@ -27,6 +27,7 @@ User data (watchlists, transactions) lives in Supabase Postgres with row-level s
 | `GET /api/portfolio` | holdings with live price, value, unrealised P&L, day change, 7d trend, allocation by sector |
 | `GET/POST /api/portfolio/transactions` | list / add `{symbol, side, quantity, price, fees?, tradedOn?, note?}`; overselling is rejected |
 | `DELETE /api/portfolio/transactions/:id` | rejected if it would leave a later sale unfunded |
+| `POST /api/portfolio/sync {positions:[{symbol,quantity,totalCost}], apply?, asOf?, closeSymbols?}` | Import or re-sync holdings from a broker (ATrad) export. Without `apply` it previews the buy/sell changes needed; with `apply: true` it records them as transactions (all or nothing) |
 | `GET /api/portfolio/history?range=1W\|1M\|3M\|1Y\|ALL` | value series + flow-adjusted `gain`/`returnPct` (Modified Dietz) |
 
 ## Ops

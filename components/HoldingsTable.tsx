@@ -23,7 +23,7 @@ export function Badge({ symbol, sector }: { symbol: string; sector?: string }) {
   return <span className="grid h-10 w-10 shrink-0 place-items-center rounded-xl text-xs font-bold text-white" style={{ background: sectorColor(sector ?? symbol) }}>{shortSymbol(symbol).slice(0, 2)}</span>;
 }
 
-export default function HoldingsTable({ holdings }: { holdings: HoldingRow[] | null }) {
+export default function HoldingsTable({ holdings, onImport }: { holdings: HoldingRow[] | null; onImport: () => void }) {
   const [filter, setFilter] = useState("All");
   const sectors = useMemo(() => ["All", ...new Set((holdings ?? []).map((h) => h.sector))], [holdings]);
   const rows = (holdings ?? []).filter((h) => filter === "All" || h.sector === filter);
@@ -36,7 +36,10 @@ export default function HoldingsTable({ holdings }: { holdings: HoldingRow[] | n
           <h2 className="text-[15px] font-semibold">Holdings</h2>
           <p className="mt-0.5 text-sm text-muted">{holdings ? `${rows.length} Position${rows.length === 1 ? "" : "s"}` : "Loading"}</p>
         </div>
-        {holdings && holdings.length > 0 && <Segmented options={sectors} value={active} onChange={setFilter} />}
+        <div className="flex flex-wrap items-center gap-2">
+          {holdings && holdings.length > 0 && <Segmented options={sectors} value={active} onChange={setFilter} />}
+          {holdings && holdings.length > 0 && <button onClick={onImport} className="h-10 rounded-xl border border-line px-4 text-sm font-semibold hover:bg-subtle">Sync from ATrad</button>}
+        </div>
       </div>
 
       {!holdings ? (

@@ -37,6 +37,9 @@ Schema lives in Supabase (user tables with RLS: `watchlists`, `watchlist_items`,
 
 Schedule `POST /api/cron/eod` with `Authorization: Bearer $CRON_SECRET` after 14:30 Sri Lanka time to record daily closes (CSE only serves one year of history).
 
+### Importing a portfolio from ATrad
+On the Portfolio page choose **Import from ATrad** (or **Sync from ATrad** once you have holdings) and pick the `.xlsx` you download from ATrad (Portfolio, Excel). The file is parsed in the browser; only symbol, quantity and total cost are sent. Costs come from ATrad's Total Cost (which already includes buying charges), and the export has no trade dates, so holdings start on the date you choose. After that, prices update automatically; sync again (or use New Trade) only after you buy or sell. Sales found by a re-sync are priced at today's price as an estimate, because the export has no sale prices.
+
 See [API.md](API.md) for the HTTP API.
 
 ## Deploying (Vercel)
