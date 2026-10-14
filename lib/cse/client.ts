@@ -136,7 +136,8 @@ export const fetchSl20 = async () => normaliseIndex(await post("snpData"), "snpD
 export async function fetchMarketStatus(): Promise<{ status: string; open: boolean }> {
   const o = obj(await post("marketStatus"), "marketStatus");
   const status = str(o, "status", "marketStatus");
-  return { status, open: /open/i.test(status) && !/closed/i.test(status) };
+  // CSE reports "Pre Trading", "Regular Trading" (the live session), "Market Closed"; treat only an active session as open.
+  return { status, open: /regular|\bopen\b/i.test(status) && !/closed|pre/i.test(status) };
 }
 
 export async function fetchMarketSummary(): Promise<MarketSummary> {
