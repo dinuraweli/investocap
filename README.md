@@ -4,6 +4,8 @@ Track the Colombo Stock Exchange (CSE): delayed live prices, charts, watchlists 
 
 **Stack:** Next.js 16 (App Router) · TypeScript · Tailwind 4 · Supabase (Auth + Postgres with row-level security)
 
+**Live:** https://investocap.vercel.app
+
 > Prices come from the unofficial cse.lk API and may be delayed. For information only, not investment advice.
 
 ## Getting started
@@ -36,3 +38,8 @@ Schema lives in Supabase (user tables with RLS: `watchlists`, `watchlist_items`,
 Schedule `POST /api/cron/eod` with `Authorization: Bearer $CRON_SECRET` after 14:30 Sri Lanka time to record daily closes (CSE only serves one year of history).
 
 See [API.md](API.md) for the HTTP API.
+
+## Deploying (Vercel)
+The repo is linked to Vercel: every push to `main` deploys to production. `vercel.json` pins functions to Mumbai (`bom1`, next to the Supabase database) and schedules the end-of-day job (`/api/cron/eod`, Mon-Fri 10:00 UTC = 15:30 Sri Lanka time).
+
+Set these in Vercel (Project Settings → Environment Variables): `SUPABASE_URL`, `SUPABASE_PUBLISHABLE_KEY`, `SUPABASE_SERVICE_ROLE_KEY` (mark it Sensitive), `CRON_SECRET`. In Supabase, set Authentication → URL Configuration → Site URL to the production address.
