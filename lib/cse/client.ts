@@ -262,24 +262,54 @@ export async function fetchCompanyReports(symbol: string): Promise<CompanyReport
 
 const MAX_PDF_BYTES = 40 * 1024 * 1024;
 
-/** Download a report PDF from the CSE CDN. The path must come from the CSE listing (validated here too). */
-export async function fetchReportPdf(path: string): Promise<ArrayBuffer> {
-  if (!isReportPath(path)) throw new CseError("Refusing to download an unexpected path");
+/** Download a PDF from the CSE CDN. `allowed` decides which paths may be fetched; nothing else ever is. */
+async function fetchCdnPdf(path: string, allowed: (p: string) => boolean, maxBytes: number): Promise<ArrayBuffer> {
+  if (!allowed(path)) throw new CseError("Refusing to download an unexpected path");
+  const tooBig = () => new CseError(`This document is too large to read (over ${Math.round(maxBytes / 1048576)} MB).`);
   // The CSE's CDN can be slow, so allow two minutes for the whole download (the function itself may run for five).
-  let res: Response;
   let bytes: ArrayBuffer;
   try {
-    res = await fetch(`https://cdn.cse.lk/${path}`, { headers: { "User-Agent": HEADERS["User-Agent"], Referer: "https://www.cse.lk/" }, signal: AbortSignal.timeout(120_000), cache: "no-store" });
-    if (!res.ok) throw new CseError(`Could not download the report (HTTP ${res.status})`);
-    const declared = Number(res.headers.get("content-length") ?? 0);
-    if (declared > MAX_PDF_BYTES) throw new CseError("This report is too large to analyse (over 40 MB).");
+    const res = await fetch(`https://cdn.cse.lk/${encodeURI(path)}`, { headers: { "User-Agent": HEADERS["User-Agent"], Referer: "https://www.cse.lk/" }, signal: AbortSignal.timeout(120_000), cache: "no-store" });
+    if (!res.ok) throw new CseError(`Could not download the document (HTTP ${res.status})`);
+    if (Number(res.headers.get("content-length") ?? 0) > maxBytes) throw tooBig();
     bytes = await res.arrayBuffer();
   } catch (e) {
     if (e instanceof CseError) throw e;
     const timedOut = (e as Error).name === "TimeoutError" || (e as Error).name === "AbortError";
-    throw new CseError(timedOut ? "The CSE's server was too slow to download this report. Please try again in a moment." : "Could not download the report from the CSE. Please try again.");
+    throw new CseError(timedOut ? "The CSE's server was too slow to download this document. Please try again in a moment." : "Could not download the document from the CSE. Please try again.");
   }
-  if (bytes.byteLength > MAX_PDF_BYTES) throw new CseError("This report is too large to analyse (over 40 MB).");
+  if (bytes.byteLength > maxBytes) throw tooBig();
   if (new TextDecoder().decode(bytes.slice(0, 5)) !== "%PDF-") throw new CseError("The downloaded file is not a PDF.");
   return bytes;
 }
+
+/** Download a company report PDF. The path must come from the CSE listing (validated here too). */
+export const fetchReportPdf = (path: string) => fetchCdnPdf(path, isReportPath, MAX_PDF_BYTES);
+
+// ---- company profile and announcements -------------------------------------------------------
+
+import { isAnnouncementDocPath, normaliseAnnouncementDetail, normaliseAnnouncementList, normaliseProfile, type AnnouncementDetail, type AnnouncementItem, type CompanyProfile } from "./company.ts";
+export type { AnnouncementDetail, AnnouncementItem, CompanyProfile };
+
+/** Profile, board and business summary. (Symbol goes in the query string of a POST.) */
+export async function fetchCompanyProfile(symbol: string): Promise<CompanyProfile> {
+  return normaliseProfile(await post(`companyProfile?symbol=${encodeURIComponent(symbol)}`));
+}
+
+/** Every announcement the company has made, newest first. */
+export async function fetchCompanyAnnouncements(symbol: string): Promise<AnnouncementItem[]> {
+  return normaliseAnnouncementList(await post(`getAnnouncementByCompany?symbol=${encodeURIComponent(symbol)}`));
+}
+
+/** One announcement's details. CSE keeps two kinds (structured and general), and one of them answers for any id. */
+export async function fetchAnnouncementDetail(id: number): Promise<AnnouncementDetail | null> {
+  if (!Number.isInteger(id) || id <= 0) return null;
+  for (const endpoint of ["getAnnouncementById", "getGeneralAnnouncementById"]) {
+    const d = normaliseAnnouncementDetail(await post(`${endpoint}?announcementId=${id}`).catch(() => null));
+    if (d) return d;
+  }
+  return null;
+}
+
+/** Download an announcement's PDF (small documents only: it is read alongside the text, not analysed like a report). */
+export const fetchAnnouncementPdf = (path: string, maxBytes = 3 * 1024 * 1024) => fetchCdnPdf(path, isAnnouncementDocPath, maxBytes);

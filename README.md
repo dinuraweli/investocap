@@ -40,6 +40,15 @@ Schedule `POST /api/cron/eod` with `Authorization: Bearer $CRON_SECRET` after 14
 ### Importing a portfolio from ATrad
 On the Portfolio page choose **Import from ATrad** (or **Sync from ATrad** once you have holdings) and pick the `.xlsx` you download from ATrad (Portfolio, Excel). The file is parsed in the browser; only symbol, quantity and total cost are sent. Costs come from ATrad's Total Cost (which already includes buying charges), and the export has no trade dates, so holdings start on the date you choose. After that, prices update automatically; sync again (or use New Trade) only after you buy or sell. Sales found by a re-sync are priced at today's price as an estimate, because the export has no sale prices.
 
+### Company pages
+Opening a stock shows four tabs (the tab is kept in the URL, e.g. `#announcements`):
+- **Overview:** the price chart and key stats, **price performance** (1 week to 1 year against the ASPI; price only, no dividends) and **peers** in the same CSE sector.
+- **Financials:** the user's latest analysed results, key numbers, valuation at the live price and profitability ratios, linking to the full analysis.
+- **Announcements:** every announcement the company has filed (from the CSE's `getAnnouncementByCompany`), filterable by type (dividends, directors' dealings, board changes, meetings, share capital, disclosures, trading and compliance). Each opens to a headline, dividend or dealing details and PDF links. An optional **Explain this** reads the announcement (and its PDF if small) with the user's own Gemini key.
+- **About:** business summary, sector, auditors and contacts, share structure, the board and leadership, and an optional AI **short company brief**.
+
+Peers use each company's CSE sector from `companyProfile`, collected a few at a time on page visits and by the nightly job into `instruments.cse_sector`. AI output on these pages is facts-only: the prompts forbid advice and any advice-like sentence is stripped.
+
 ### Report analyser
 **Reports** in the nav lists every annual report, quarterly statement and press release a company has filed with the CSE (fetched from the CSE, PDFs from `cdn.cse.lk`). **Analyse** has Google Gemini read one and returns a plain-English summary, key numbers with PDF page references, highlights, things to check and the auditor's opinion. Margins, growth and ratios are calculated by the app, not the AI.
 

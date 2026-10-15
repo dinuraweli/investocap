@@ -30,6 +30,17 @@ User data (watchlists, transactions) lives in Supabase Postgres with row-level s
 | `POST /api/portfolio/sync {positions:[{symbol,quantity,totalCost}], apply?, asOf?, closeSymbols?}` | Import or re-sync holdings from a broker (ATrad) export. Without `apply` it previews the buy/sell changes needed; with `apply: true` it records them as transactions (all or nothing) |
 | `GET /api/portfolio/history?range=1W\|1M\|3M\|1Y\|ALL` | value series + flow-adjusted `gain`/`returnPct` (Modified Dietz) |
 
+## Company data (public unless noted)
+| Route | Purpose |
+|---|---|
+| `GET /api/companies/:symbol` | Profile (business, sector, board, contacts, directors and leadership) and share structure |
+| `GET /api/companies/:symbol/announcements?group=&limit=` | Announcements newest first, with counts per group. Groups: dividends, dealings, board, meetings, capital, disclosures, trading, other |
+| `GET /api/companies/:symbol/announcements/:id` | One announcement's headline, dividend or dealing details and PDF links (only this company's ids are accepted) |
+| `GET /api/companies/:symbol/peers` | Largest companies in the same CSE sector. Sector data fills in over time (`known` of `all`) |
+| `GET /api/stocks/:symbol/performance` | Price return over 1W, 1M, 3M, 6M, YTD and 1Y next to the ASPI |
+| `POST /api/companies/:symbol/explain {announcementId}` | Signed in, header `x-gemini-key`. Plain-English explanation of one announcement. 40 per hour |
+| `POST /api/companies/:symbol/brief` | Signed in, header `x-gemini-key`. Short factual company brief. 20 per hour |
+
 ## Reports (Gemini analyser)
 | Route | Purpose |
 |---|---|

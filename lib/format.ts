@@ -24,3 +24,13 @@ export const timeAgo = (t: number) => {
   const s = Math.max(0, Math.round((Date.now() - t) / 1000));
   return s < 60 ? `${s}s ago` : `${Math.round(s / 60)}m ago`;
 };
+
+/** "2026-08-13" -> "13 Aug 2026". */
+export const fmtIsoDate = (iso: string | null | undefined) =>
+  iso ? new Date(`${iso}T00:00:00+05:30`).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric", timeZone: "Asia/Colombo" }) : "–";
+
+/** "DEALINGS BY DIRECTORS" -> "Dealings by directors". */
+export const sentenceCase = (s: string) => {
+  const t = s.trim().toLowerCase();
+  return t.charAt(0).toUpperCase() + t.slice(1);
+};

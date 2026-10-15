@@ -124,3 +124,22 @@ export async function closesSince(symbols: string[], from: string): Promise<Reco
   );
   return Object.fromEntries(entries);
 }
+
+// ---- the CSE's own sector per company (for peers) -------------------------------------------------
+
+export async function setCseSector(symbol: string, sector: string | null): Promise<void> {
+  ok(await supabaseAdmin().from("instruments").update({ cse_sector: sector, sector_checked_at: new Date().toISOString() }).eq("symbol", symbol));
+}
+
+/** Every instrument whose CSE sector we know. */
+export async function knownSectors(): Promise<{ symbol: string; sector: string }[]> {
+  const rows = ok(await supabaseAdmin().from("instruments").select("symbol, cse_sector").not("cse_sector", "is", null)) as { symbol: string; cse_sector: string }[] | null;
+  return (rows ?? []).map((r) => ({ symbol: r.symbol, sector: r.cse_sector }));
+}
+
+/** Instruments we have not looked up (or not for a week), oldest check first. */
+export async function symbolsNeedingSector(limit: number): Promise<string[]> {
+  const weekAgo = new Date(Date.now() - 7 * DAY).toISOString();
+  const rows = ok(await supabaseAdmin().from("instruments").select("symbol").is("cse_sector", null).or(`sector_checked_at.is.null,sector_checked_at.lt.${weekAgo}`).order("sector_checked_at", { ascending: true, nullsFirst: true }).limit(limit)) as { symbol: string }[] | null;
+  return (rows ?? []).map((r) => r.symbol);
+}

@@ -4,10 +4,12 @@ import { cached } from "./cache.ts";
 import { sectorOf } from "./sectors.ts";
 import { colomboDate } from "../time.ts";
 import * as store from "../db/market.ts";
+import { computePerformance, type PerfPeriod } from "./performance.ts";
+import { selectPeers, type PeerRow, type Peers } from "./peers.ts";
 import type { IndexValue, PeriodCode, PricePoint, Quote } from "./types.ts";
 
 const SEC = 1000;
-const TTL = { quotes: 15 * SEC, indices: 15 * SEC, status: 30 * SEC, lists: 30 * SEC, detail: 60 * SEC, intraday: 30 * SEC, history: 10 * 60 * SEC, sectors: 60 * SEC };
+const TTL = { profile: 6 * 3600 * SEC, announcements: 10 * 60 * SEC, announcementDetail: 3600 * SEC, quotes: 15 * SEC, indices: 15 * SEC, status: 30 * SEC, lists: 30 * SEC, detail: 60 * SEC, intraday: 30 * SEC, history: 10 * 60 * SEC, sectors: 60 * SEC };
 
 export const RANGES = ["1D", "1W", "1M", "3M", "1Y", "ALL"] as const;
 export type RangeKey = (typeof RANGES)[number];
@@ -139,5 +141,60 @@ export async function snapshotEndOfDay() {
   const rows = await store.saveSessionCloses(date, quotes);
   if (aspi) await store.saveIndexClose("ASPI", date, aspi.value);
   if (sl20) await store.saveIndexClose("SL20", date, sl20.value);
-  return { date, rows };
+  const sectors = await fillSectors(60); // keep peer data complete without a separate job
+  return { date, rows, sectorsFilled: sectors };
+}
+
+// ---- company profile, announcements, performance, peers ---------------------------------------------
+
+export const getCompanyProfile = (symbol: string) => cached(`profile:${symbol}`, TTL.profile, () => cse.fetchCompanyProfile(symbol));
+export const getCompanyAnnouncements = (symbol: string) => cached(`ann:${symbol}`, TTL.announcements, () => cse.fetchCompanyAnnouncements(symbol));
+export const getAnnouncementDetail = (id: number) => cached(`annd:${id}`, TTL.announcementDetail, () => cse.fetchAnnouncementDetail(id));
+
+/** Stock and ASPI returns over 1 week to 1 year, from the cached daily histories. */
+export async function getPerformance(quote: Quote): Promise<{ periods: PerfPeriod[]; stale: boolean }> {
+  const [stock, index] = await Promise.all([getStockHistory(quote, "1Y"), cached("aspi-1y", TTL.history, () => cse.fetchIndexHistory(1, 5))]);
+  const pts = (a: PricePoint[]) => a.map((p) => ({ t: p.t, price: p.price })).sort((x, y) => x.t - y.t);
+  return { periods: computePerformance(pts(stock.points), pts(index.value), Date.now()), stale: stock.stale || index.stale };
+}
+
+const sectorGlobal = globalThis as unknown as { __sectorFill?: Promise<number> };
+
+/**
+ * Look up the CSE sector of up to `limit` companies we have not checked yet, a few at a time. Safe to call from
+ * several requests at once (only one fill runs). Returns how many were filled. Never throws.
+ */
+export function fillSectors(limit: number): Promise<number> {
+  if (sectorGlobal.__sectorFill) return sectorGlobal.__sectorFill;
+  const run = (async () => {
+    let filled = 0;
+    try {
+      const todo = await store.symbolsNeedingSector(limit);
+      for (let i = 0; i < todo.length; i += 6) {
+        const batch = await Promise.allSettled(todo.slice(i, i + 6).map(async (symbol) => {
+          const p = await cse.fetchCompanyProfile(symbol);
+          await store.setCseSector(symbol, p.sector); // also records "no sector" so we do not retry every request
+          filled++;
+        }));
+        batch.forEach((r) => r.status === "rejected" && console.error("[sector fill]", (r.reason as Error).message));
+      }
+    } catch (e) {
+      console.error("[sector fill]", (e as Error).message);
+    }
+    return filled;
+  })().finally(() => { sectorGlobal.__sectorFill = undefined; });
+  sectorGlobal.__sectorFill = run;
+  return run;
+}
+
+/** Companies in the same CSE sector. The sector list fills in gradually; `known` / `all` show how complete it is. */
+export async function getPeers(quote: Quote): Promise<Peers & { known: number; all: number }> {
+  const profile = await getCompanyProfile(quote.symbol).catch(() => null);
+  if (profile?.value.sector) await store.setCseSector(quote.symbol, profile.value.sector).catch(() => {});
+  await Promise.race([fillSectors(24), new Promise((r) => setTimeout(r, 7000))]); // learn a few more sectors per visit, without making the page wait long
+  const [sectors, quotes] = await Promise.all([store.knownSectors(), getQuotes()]);
+  const bySector = new Map(sectors.map((s) => [s.symbol, s.sector]));
+  if (profile?.value.sector) bySector.set(quote.symbol, profile.value.sector);
+  const rows: PeerRow[] = quotes.value.map((q) => ({ symbol: q.symbol, name: q.name, sector: bySector.get(q.symbol) ?? null, price: q.price, changePct: q.changePct, marketCap: q.marketCap }));
+  return { ...selectPeers(quote.symbol, rows), known: bySector.size, all: quotes.value.length };
 }

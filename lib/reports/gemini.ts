@@ -77,12 +77,12 @@ interface GenerateResponse {
   promptFeedback?: { blockReason?: string };
 }
 
-/** Pull the JSON text out of a generateContent response and validate it. */
-export function parseGenerateResponse(res: GenerateResponse): ReportAnalysis {
+/** Pull the JSON text out of a generateContent response and validate it with `validate` (which throws if the shape is wrong). */
+export function parseGenerate<T>(res: GenerateResponse, validate: (json: unknown) => T): T {
   if (res.promptFeedback?.blockReason) throw new GeminiError("blocked", `Gemini declined to read this document (${res.promptFeedback.blockReason}).`);
   const cand = res.candidates?.[0];
   if (!cand) throw new GeminiError("format", "Gemini returned no answer.");
-  if (cand.finishReason === "MAX_TOKENS") throw new GeminiError("truncated", "The analysis was cut off because the report is very large. Try a shorter report.");
+  if (cand.finishReason === "MAX_TOKENS") throw new GeminiError("truncated", "The answer was cut off because the source is very large. Try a shorter one.");
   if (cand.finishReason && !["STOP", "FINISH_REASON_UNSPECIFIED"].includes(cand.finishReason)) {
     throw new GeminiError("blocked", `Gemini stopped early (${cand.finishReason}).`);
   }
@@ -95,11 +95,14 @@ export function parseGenerateResponse(res: GenerateResponse): ReportAnalysis {
     throw new GeminiError("format", "Gemini's answer was not valid JSON. Please try again.");
   }
   try {
-    return validateAnalysis(json);
+    return validate(json);
   } catch (e) {
     throw new GeminiError("format", (e as Error).message);
   }
 }
+
+/** Parse a report analysis response. */
+export const parseGenerateResponse = (res: GenerateResponse): ReportAnalysis => parseGenerate(res, validateAnalysis);
 
 // ---- network -----------------------------------------------------------------------------------
 
@@ -169,49 +172,82 @@ const REASON: Record<string, string> = {
   quota: "hit its usage limit", model: "isn't available for your key", overloaded: "is overloaded right now", format: "returned an unreadable answer",
 };
 
+/** Hand a PDF to Gemini: inline when small, otherwise uploaded once (and deleted afterwards via `cleanup`). */
+async function attachPdf(key: string, pdf: ArrayBuffer, title: string, onEvent: (e: AnalysisEvent) => void): Promise<{ ref: PdfRef; cleanup: () => void }> {
+  if (pdf.byteLength <= INLINE_LIMIT) return { ref: { kind: "inline", base64: Buffer.from(pdf).toString("base64") }, cleanup: () => {} };
+  onEvent({ type: "uploading" });
+  const f = await uploadFile(key, pdf, title);
+  return { ref: { kind: "file", uri: f.uri }, cleanup: () => { call(`/v1beta/${f.name}`, key, { method: "DELETE" }, 15_000).catch(() => {}); } };
+}
+
 /**
- * Analyse one PDF, trying `models` in order. If a model hits its limit, is overloaded, is unavailable, or
- * returns garbage, the next model is tried. Problems that no other model can fix (bad key, blocked content,
- * oversized report) stop immediately. Large files are uploaded once and reused across attempts.
+ * Try `models` in order. If a model hits its limit, is overloaded, is unavailable, or returns garbage, the next
+ * model is tried. Problems that no other model can fix (bad key, blocked content, oversized input) stop at once.
  */
-export async function analysePdf(
-  key: string, models: string[], pdf: ArrayBuffer, meta: { company: string; title: string; date: string | null }, onEvent: (e: AnalysisEvent) => void = () => {},
-): Promise<{ analysis: ReportAnalysis; model: string; attempts: Attempt[] }> {
+export async function runWithFallback<T>(key: string, models: string[], body: () => object, parse: (res: GenerateResponse) => T, onEvent: (e: AnalysisEvent) => void = () => {}): Promise<{ result: T; model: string; attempts: Attempt[] }> {
   if (models.length === 0) throw new GeminiError("model", "No Gemini model is available.");
-  let ref: PdfRef;
-  let uploaded: string | null = null;
-  if (pdf.byteLength <= INLINE_LIMIT) {
-    ref = { kind: "inline", base64: Buffer.from(pdf).toString("base64") };
-  } else {
-    onEvent({ type: "uploading" });
-    const f = await uploadFile(key, pdf, meta.title);
-    ref = { kind: "file", uri: f.uri };
-    uploaded = f.name;
-  }
   const attempts: Attempt[] = [];
   let last: GeminiError | null = null;
-  try {
-    for (let i = 0; i < models.length; i++) {
-      const model = models[i];
-      onEvent({ type: "trying", model, attempt: i + 1, of: models.length });
-      try {
-        const res = await call(`/v1beta/models/${encodeURIComponent(model)}:generateContent`, key, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(buildRequest(ref, meta)) });
-        return { analysis: parseGenerateResponse((await res.json()) as GenerateResponse), model, attempts };
-      } catch (e) {
-        if (!(e instanceof GeminiError) || !FALLBACK_CODES.includes(e.code)) throw e;
-        last = e;
-        const reason = REASON[e.code] ?? "failed";
-        attempts.push({ model, reason });
-        onEvent({ type: "fallback", from: model, to: models[i + 1] ?? null, reason });
-      }
+  for (let i = 0; i < models.length; i++) {
+    const model = models[i];
+    onEvent({ type: "trying", model, attempt: i + 1, of: models.length });
+    try {
+      const res = await call(`/v1beta/models/${encodeURIComponent(model)}:generateContent`, key, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body()) });
+      return { result: parse((await res.json()) as GenerateResponse), model, attempts };
+    } catch (e) {
+      if (!(e instanceof GeminiError) || !FALLBACK_CODES.includes(e.code)) throw e;
+      last = e;
+      const reason = REASON[e.code] ?? "failed";
+      attempts.push({ model, reason });
+      onEvent({ type: "fallback", from: model, to: models[i + 1] ?? null, reason });
     }
-  } finally {
-    if (uploaded) call(`/v1beta/${uploaded}`, key, { method: "DELETE" }, 15_000).catch(() => {});
   }
   const allQuota = attempts.every((a) => a.reason === REASON.quota);
   throw new GeminiError(
     allQuota ? "quota" : last!.code,
-    allQuota ? `Your Gemini usage limit is reached on all ${attempts.length} available models. Please try again later.` : `None of the ${attempts.length} Gemini models could finish this analysis (${attempts.map((a) => `${a.model} ${a.reason}`).join("; ")}).`,
+    allQuota ? `Your Gemini usage limit is reached on all ${attempts.length} available models. Please try again later.` : `None of the ${attempts.length} Gemini models could finish this (${attempts.map((a) => `${a.model} ${a.reason}`).join("; ")}).`,
     allQuota ? 429 : last!.status,
   );
+}
+
+/** Analyse one company report PDF with the fallback chain. */
+export async function analysePdf(
+  key: string, models: string[], pdf: ArrayBuffer, meta: { company: string; title: string; date: string | null }, onEvent: (e: AnalysisEvent) => void = () => {},
+): Promise<{ analysis: ReportAnalysis; model: string; attempts: Attempt[] }> {
+  if (models.length === 0) throw new GeminiError("model", "No Gemini model is available.");
+  const { ref, cleanup } = await attachPdf(key, pdf, meta.title, onEvent);
+  try {
+    const { result, model, attempts } = await runWithFallback(key, models, () => buildRequest(ref, meta), parseGenerateResponse, onEvent);
+    return { analysis: result, model, attempts };
+  } finally {
+    cleanup();
+  }
+}
+
+export interface JsonSpec<T> {
+  system: string;
+  text: string; // the user message
+  pdf?: { bytes: ArrayBuffer; title: string }; // optional document to read alongside the text
+  schema: object;
+  validate: (json: unknown) => T;
+  maxOutputTokens?: number;
+}
+
+/** A structured-JSON generation (optionally with a PDF) with the same fallback chain. Used for short explanations. */
+export async function generateJson<T>(key: string, models: string[], spec: JsonSpec<T>, onEvent: (e: AnalysisEvent) => void = () => {}): Promise<{ result: T; model: string; attempts: Attempt[] }> {
+  if (models.length === 0) throw new GeminiError("model", "No Gemini model is available.");
+  const attached = spec.pdf ? await attachPdf(key, spec.pdf.bytes, spec.pdf.title, onEvent) : null;
+  try {
+    const body = () => {
+      const pdfPart = attached ? [attached.ref.kind === "inline" ? { inlineData: { mimeType: "application/pdf", data: attached.ref.base64 } } : { fileData: { mimeType: "application/pdf", fileUri: attached.ref.uri } }] : [];
+      return {
+        systemInstruction: { parts: [{ text: spec.system }] },
+        contents: [{ role: "user", parts: [...pdfPart, { text: spec.text }] }],
+        generationConfig: { temperature: 0.2, responseMimeType: "application/json", responseSchema: spec.schema, maxOutputTokens: spec.maxOutputTokens ?? 2048 },
+      };
+    };
+    return await runWithFallback(key, models, body, (res) => parseGenerate(res, spec.validate), onEvent);
+  } finally {
+    attached?.cleanup();
+  }
 }
