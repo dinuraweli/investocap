@@ -17,8 +17,9 @@ const HOURLY_CAP = 20;
 
 /** Turn an expected failure into an HTTP-style status and message; unexpected ones become a generic message. */
 function describe(e: unknown): { status: number; message: string } {
-  if (e instanceof GeminiError) return { status: e.status, message: e.message };
-  if (e instanceof CseError) return { status: 502, message: e.message };
+  // Log the reason for expected failures too, so a bad run can be diagnosed. Messages are already scrubbed of the API key.
+  if (e instanceof GeminiError) { console.warn("[analyse] gemini failure", { code: e.code, status: e.status, message: e.message }); return { status: e.status, message: e.message }; }
+  if (e instanceof CseError) { console.warn("[analyse] cse failure", { message: e.message }); return { status: 502, message: e.message }; }
   console.error("[analyse]", e);
   return { status: 502, message: "Something went wrong while analysing. Please try again." };
 }
@@ -70,8 +71,12 @@ export const POST = handle(async (req: Request) => {
       const { analysis, model, attempts } = await analysePdf(key, models, pdf, { company: quote.name, title: report.title, date: report.date }, (e) => {
         if (e.type === "uploading") emit({ type: "stage", stage: "uploading", pct: 30, message: "Sending the large report to Gemini" });
         else if (e.type === "trying") emit({ type: "stage", stage: "analysing", pct: 40, model: e.model, message: e.attempt === 1 ? `Reading the report with ${e.model}` : `Trying ${e.model} (backup ${e.attempt - 1} of ${e.of - 1})` });
-        else emit({ type: "fallback", from: e.from, to: e.to, reason: e.reason, message: `${e.from} ${e.reason}.${e.to ? ` Switching to ${e.to}.` : ""}` });
+        else {
+          console.info("[analyse] fallback", { from: e.from, to: e.to, reason: e.reason });
+          emit({ type: "fallback", from: e.from, to: e.to, reason: e.reason, message: `${e.from} ${e.reason}.${e.to ? ` Switching to ${e.to}.` : ""}` });
+        }
       });
+      console.info("[analyse] ok", { reportId, model, backupsUsed: attempts.length });
       emit({ type: "stage", stage: "saving", pct: 95, message: "Saving your analysis" });
       const saved = { reportId, symbol: quote.symbol, kind: report.kind, title: report.title, reportDate: report.date, pdfPath: report.path, model, analysis };
       await saveAnalysis(db, saved);
