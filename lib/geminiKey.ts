@@ -5,22 +5,27 @@ import { useEffect, useState } from "react";
 
 const KEY = "ic_gemini_key";
 const MODEL = "ic_gemini_model";
+const MODELS = "ic_gemini_models";
 const EVENT = "ic-gemini-key-changed";
 
-export interface StoredKey { key: string; model: string | null }
+export interface StoredKey { key: string; model: string | null; models: string[] }
 
 export function readKey(): StoredKey | null {
   try {
     const key = localStorage.getItem(KEY);
-    return key ? { key, model: localStorage.getItem(MODEL) } : null;
+    if (!key) return null;
+    let models: string[] = [];
+    try { models = JSON.parse(localStorage.getItem(MODELS) ?? "[]"); } catch {}
+    return { key, model: localStorage.getItem(MODEL), models: Array.isArray(models) ? models : [] };
   } catch {
     return null; // storage blocked (private mode, etc.)
   }
 }
-export function saveKey(key: string, model: string | null) {
+export function saveKey(key: string, model: string | null, models: string[] = []) {
   try {
     localStorage.setItem(KEY, key);
     if (model) localStorage.setItem(MODEL, model);
+    localStorage.setItem(MODELS, JSON.stringify(models));
     window.dispatchEvent(new Event(EVENT));
   } catch {}
 }
@@ -28,6 +33,7 @@ export function clearKey() {
   try {
     localStorage.removeItem(KEY);
     localStorage.removeItem(MODEL);
+    localStorage.removeItem(MODELS);
     window.dispatchEvent(new Event(EVENT));
   } catch {}
 }

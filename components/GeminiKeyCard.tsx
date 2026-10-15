@@ -18,8 +18,8 @@ export default function GeminiKeyCard() {
     setBusy(true);
     setError(null);
     try {
-      const r = await apiPost<{ model: string }>("/api/reports/key-check", {}, { "x-gemini-key": key });
-      saveKey(key, r.model);
+      const r = await apiPost<{ model: string; models: string[] }>("/api/reports/key-check", {}, { "x-gemini-key": key });
+      saveKey(key, r.model, r.models);
       setValue("");
       setEditing(false);
     } catch (err) {
@@ -32,7 +32,7 @@ export default function GeminiKeyCard() {
   if (stored && !editing) {
     return (
       <div className="card flex flex-wrap items-center justify-between gap-3 px-5 py-3.5 text-sm">
-        <span><span className="mr-2 text-gain">●</span>Gemini key saved in this browser{stored.model ? <span className="text-muted"> · uses {stored.model}</span> : null}</span>
+        <span><span className="mr-2 text-gain">●</span>Gemini key saved in this browser{stored.model ? <span className="text-muted"> · uses {stored.model}{stored.models.length > 1 ? `, with ${stored.models.length - 1} backup${stored.models.length > 2 ? "s" : ""} if it hits its limit` : ""}</span> : null}</span>
         <span className="flex gap-1">
           <button onClick={() => setEditing(true)} className="rounded-lg px-3 py-1.5 font-medium text-brand hover:bg-brand-soft">Change</button>
           <button onClick={clearKey} className="rounded-lg px-3 py-1.5 font-medium text-loss hover:bg-loss-soft">Remove</button>

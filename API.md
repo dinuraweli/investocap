@@ -38,6 +38,8 @@ User data (watchlists, transactions) lives in Supabase Postgres with row-level s
 | `POST /api/reports/key-check` | Signed in. Header `x-gemini-key`. Verifies the key and returns the model that will be used |
 | `POST /api/reports/analyse {symbol, reportId, force?}` | Signed in. Header `x-gemini-key`. Downloads the report from the CSE, has Gemini analyse it, saves the result. Returns the saved copy (without calling Gemini) if it already exists, unless `force`. Capped at 20 per hour per user |
 
+`key-check` also returns `models`: the primary model plus up to 3 backups, best first. `analyse` falls back through them (quota, overloaded, unavailable, or unreadable answer). Send `Accept: application/x-ndjson` to stream progress events (`stage`, `fallback`, `ping`, then `done` or `error`); without it the response is plain JSON.
+
 The Gemini key is only ever read from the `x-gemini-key` header, used for that request, and discarded.
 
 ## Ops

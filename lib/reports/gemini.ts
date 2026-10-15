@@ -7,7 +7,7 @@ const INLINE_LIMIT = 10 * 1024 * 1024; // PDFs above this go through the Files A
 
 export class GeminiError extends Error {
   status: number;
-  code: "bad_key" | "quota" | "model" | "blocked" | "too_large" | "truncated" | "format" | "upstream";
+  code: "bad_key" | "quota" | "model" | "overloaded" | "blocked" | "too_large" | "truncated" | "format" | "upstream";
   constructor(code: GeminiError["code"], message: string, status = 502) {
     super(message);
     this.code = code;
@@ -31,23 +31,33 @@ export interface ModelInfo {
   supportedGenerationMethods?: string[];
 }
 
+export const MAX_FALLBACKS = 3;
+
 /**
- * Choose the best general "flash" model from the key's own model list: newest version first, stable over
- * preview/experimental, and never image/audio/tts/embedding/live/lite variants.
+ * Rank the key's usable models best-first and return the primary plus up to MAX_FALLBACKS backups.
+ * Order: general "flash" models newest first, then "flash-lite", then "pro". Preview/experimental builds and
+ * image, audio, tts, embedding and live variants are never used. A dated copy (e.g. -001) is only used if
+ * the plain alias is missing.
  */
-export function pickModel(models: ModelInfo[]): string | null {
-  const candidates = models
-    .filter((m) => m.supportedGenerationMethods?.includes("generateContent"))
-    .map((m) => m.name.replace(/^models\//, ""))
-    .filter((n) => /^gemini-[\d.]+-flash(-\d+)?$/.test(n)) // exact family: excludes -lite, -image, -tts, -live, -preview-...
-    .map((n) => {
-      const v = n.match(/^gemini-([\d.]+)-flash/)![1].split(".").map(Number);
-      return { n, v: v[0] * 1000 + (v[1] ?? 0), pinned: /-\d+$/.test(n) };
-    });
-  if (candidates.length === 0) return null;
-  candidates.sort((a, b) => b.v - a.v || Number(a.pinned) - Number(b.pinned)); // newest first; alias before dated copy
-  return candidates[0].n;
+export function rankModels(models: ModelInfo[]): string[] {
+  const TIERS: [RegExp, number][] = [[/^gemini-(\d+(?:\.\d+)?)-flash$/, 0], [/^gemini-(\d+(?:\.\d+)?)-flash-lite$/, 1], [/^gemini-(\d+(?:\.\d+)?)-pro$/, 2]];
+  const names = models.filter((m) => m.supportedGenerationMethods?.includes("generateContent")).map((m) => m.name.replace(/^models\//, ""));
+  const have = new Set(names);
+  const ranked: { n: string; tier: number; v: number }[] = [];
+  for (const raw of names) {
+    const n = raw.replace(/-\d{3}$/, ""); // dated copy -> alias
+    if (n !== raw && have.has(n)) continue; // alias exists, skip the dated copy
+    for (const [re, tier] of TIERS) {
+      const m = n.match(re);
+      if (m) { const [maj, min = "0"] = m[1].split("."); ranked.push({ n: raw, tier, v: Number(maj) * 1000 + Number(min) }); break; }
+    }
+  }
+  ranked.sort((a, b) => a.tier - b.tier || b.v - a.v);
+  return ranked.slice(0, 1 + MAX_FALLBACKS).map((r) => r.n);
 }
+
+/** The single best model (kept for callers that only need one). */
+export const pickModel = (models: ModelInfo[]): string | null => rankModels(models)[0] ?? null;
 
 // ---- request / response shaping (pure) ---------------------------------------------------------
 
@@ -109,16 +119,17 @@ async function call(path: string, key: string, init: RequestInit = {}, timeoutMs
   if (res.status === 429) throw new GeminiError("quota", "Your Gemini quota or rate limit was reached. Wait a minute, or check your plan in Google AI Studio.", 429);
   if (res.status === 404) throw new GeminiError("model", "That Gemini model isn't available for this key.", 502);
   if (res.status === 413) throw new GeminiError("too_large", "This report is too large for Gemini to read.", 413);
+  if (res.status >= 500) throw new GeminiError("overloaded", `Gemini is overloaded or having trouble (${res.status})${detail ? `: ${detail.slice(0, 160)}` : ""}`, 503);
   throw new GeminiError("upstream", `Gemini error (${res.status})${detail ? `: ${detail.slice(0, 200)}` : ""}`);
 }
 
 /** Verify a key and choose a model, by asking Gemini which models this key can use. */
-export async function checkKey(key: string): Promise<{ model: string }> {
+export async function checkKey(key: string): Promise<{ model: string; models: string[] }> {
   const res = await call("/v1beta/models?pageSize=200", key, {}, 20_000);
   const { models } = (await res.json()) as { models?: ModelInfo[] };
-  const model = pickModel(models ?? []);
-  if (!model) throw new GeminiError("model", "No suitable Gemini model was found for this key.");
-  return { model };
+  const ranked = rankModels(models ?? []);
+  if (ranked.length === 0) throw new GeminiError("model", "No suitable Gemini model was found for this key.");
+  return { model: ranked[0], models: ranked };
 }
 
 async function uploadFile(key: string, bytes: ArrayBuffer, displayName: string): Promise<{ uri: string; name: string }> {
@@ -146,21 +157,61 @@ async function uploadFile(key: string, bytes: ArrayBuffer, displayName: string):
   return { uri: file.uri, name: file.name };
 }
 
-/** Analyse one PDF. Large files are uploaded and deleted afterwards (best effort; Gemini also expires them in 48h). */
-export async function analysePdf(key: string, model: string, pdf: ArrayBuffer, meta: { company: string; title: string; date: string | null }): Promise<ReportAnalysis> {
+export type AnalysisEvent =
+  | { type: "uploading" }
+  | { type: "trying"; model: string; attempt: number; of: number }
+  | { type: "fallback"; from: string; to: string | null; reason: string };
+
+export interface Attempt { model: string; reason: string }
+
+const FALLBACK_CODES: GeminiError["code"][] = ["quota", "model", "overloaded", "format"]; // problems specific to one model
+const REASON: Record<string, string> = {
+  quota: "hit its usage limit", model: "isn't available for your key", overloaded: "is overloaded right now", format: "returned an unreadable answer",
+};
+
+/**
+ * Analyse one PDF, trying `models` in order. If a model hits its limit, is overloaded, is unavailable, or
+ * returns garbage, the next model is tried. Problems that no other model can fix (bad key, blocked content,
+ * oversized report) stop immediately. Large files are uploaded once and reused across attempts.
+ */
+export async function analysePdf(
+  key: string, models: string[], pdf: ArrayBuffer, meta: { company: string; title: string; date: string | null }, onEvent: (e: AnalysisEvent) => void = () => {},
+): Promise<{ analysis: ReportAnalysis; model: string; attempts: Attempt[] }> {
+  if (models.length === 0) throw new GeminiError("model", "No Gemini model is available.");
   let ref: PdfRef;
   let uploaded: string | null = null;
   if (pdf.byteLength <= INLINE_LIMIT) {
     ref = { kind: "inline", base64: Buffer.from(pdf).toString("base64") };
   } else {
+    onEvent({ type: "uploading" });
     const f = await uploadFile(key, pdf, meta.title);
     ref = { kind: "file", uri: f.uri };
     uploaded = f.name;
   }
+  const attempts: Attempt[] = [];
+  let last: GeminiError | null = null;
   try {
-    const res = await call(`/v1beta/models/${encodeURIComponent(model)}:generateContent`, key, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(buildRequest(ref, meta)) });
-    return parseGenerateResponse((await res.json()) as GenerateResponse);
+    for (let i = 0; i < models.length; i++) {
+      const model = models[i];
+      onEvent({ type: "trying", model, attempt: i + 1, of: models.length });
+      try {
+        const res = await call(`/v1beta/models/${encodeURIComponent(model)}:generateContent`, key, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(buildRequest(ref, meta)) });
+        return { analysis: parseGenerateResponse((await res.json()) as GenerateResponse), model, attempts };
+      } catch (e) {
+        if (!(e instanceof GeminiError) || !FALLBACK_CODES.includes(e.code)) throw e;
+        last = e;
+        const reason = REASON[e.code] ?? "failed";
+        attempts.push({ model, reason });
+        onEvent({ type: "fallback", from: model, to: models[i + 1] ?? null, reason });
+      }
+    }
   } finally {
     if (uploaded) call(`/v1beta/${uploaded}`, key, { method: "DELETE" }, 15_000).catch(() => {});
   }
+  const allQuota = attempts.every((a) => a.reason === REASON.quota);
+  throw new GeminiError(
+    allQuota ? "quota" : last!.code,
+    allQuota ? `Your Gemini usage limit is reached on all ${attempts.length} available models. Please try again later.` : `None of the ${attempts.length} Gemini models could finish this analysis (${attempts.map((a) => `${a.model} ${a.reason}`).join("; ")}).`,
+    allQuota ? 429 : last!.status,
+  );
 }

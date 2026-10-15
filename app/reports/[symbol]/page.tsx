@@ -8,7 +8,8 @@ import { ErrorNote, Segmented, Skeleton } from "@/components/ui";
 import type { CompanyReport, ReportsResponse, SavedAnalysis } from "@/lib/api-types";
 import { shortSymbol } from "@/lib/format";
 import { useGeminiKey } from "@/lib/geminiKey";
-import { apiPost, useApi } from "@/lib/useApi";
+import { apiPostStream, useApi } from "@/lib/useApi";
+import AnalysisProgress, { type Run } from "@/components/AnalysisProgress";
 
 const KINDS = ["Quarterly", "Annual", "Other"] as const;
 const kindOf = { Quarterly: "quarterly", Annual: "annual", Other: "other" } as const;
@@ -21,6 +22,8 @@ function Page({ symbol }: { symbol: string }) {
   const [openId, setOpenId] = useState<number | null>(null);
   const [fresh, setFresh] = useState<Record<number, SavedAnalysis>>({}); // analyses finished in this session
   const [running, setRunning] = useState<number | null>(null);
+  const [run, setRun] = useState<Run | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const panel = useRef<HTMLDivElement>(null);
 
@@ -45,15 +48,23 @@ function Page({ symbol }: { symbol: string }) {
   async function analyse(r: CompanyReport, force = false) {
     if (!key) { setError("Add your Gemini API key first."); return; }
     setError(null);
+    setNotice(null);
     setRunning(r.id);
+    setRun({ stage: "checking", pct: 5, message: "Checking your Gemini key", notes: [], startedAt: Date.now(), uploads: false });
     try {
-      const result = await apiPost<SavedAnalysis>("/api/reports/analyse", { symbol, reportId: r.id, force }, { "x-gemini-key": key.key });
+      const result = await apiPostStream("/api/reports/analyse", { symbol, reportId: r.id, force }, { "x-gemini-key": key.key }, (e) => {
+        if (e.type === "stage") setRun((cur) => cur && { ...cur, stage: e.stage, pct: Math.max(cur.pct, e.pct), message: e.message, model: e.model ?? cur.model, uploads: cur.uploads || e.stage === "uploading" });
+        else if (e.type === "fallback") setRun((cur) => cur && { ...cur, notes: [...cur.notes, e.message] });
+      });
       setFresh((f) => ({ ...f, [r.id]: result }));
       setOpenId(r.id);
+      const tried = (result as { attempts?: { model: string; reason: string }[] }).attempts ?? [];
+      if (tried.length > 0) setNotice(`Analysed with ${result.model}. ${tried.map((t) => `${t.model} ${t.reason}`).join("; ")}.`);
     } catch (e) {
       setError((e as Error).message);
     } finally {
       setRunning(null);
+      setRun(null);
     }
   }
 
@@ -70,12 +81,8 @@ function Page({ symbol }: { symbol: string }) {
       <GeminiKeyCard />
       {error && <ErrorNote message={error} />}
 
-      {running !== null && (
-        <div role="status" className="card flex items-center gap-3 p-5 text-sm">
-          <span className="h-4 w-4 animate-spin rounded-full border-2 border-brand border-t-transparent" />
-          <span>Downloading the report from the CSE and reading it with Gemini. This usually takes 20 to 90 seconds. Please keep this page open.</span>
-        </div>
-      )}
+      {run && <AnalysisProgress run={run} />}
+      {notice && !run && <p className="rounded-xl bg-[#fff4e5] px-4 py-3 text-sm text-warn">{notice}</p>}
 
       {current && (
         <div ref={panel} className="scroll-mt-4">
