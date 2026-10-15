@@ -20,8 +20,8 @@ async function request<T>(url: string, init?: RequestInit): Promise<T> {
   return body as T;
 }
 
-export const apiPost = <T = unknown>(url: string, data: unknown = {}) =>
-  request<T>(url, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(data) });
+export const apiPost = <T = unknown>(url: string, data: unknown = {}, headers: Record<string, string> = {}) =>
+  request<T>(url, { method: "POST", headers: { "Content-Type": "application/json", ...headers }, body: JSON.stringify(data) });
 export const apiDelete = <T = unknown>(url: string) => request<T>(url, { method: "DELETE" });
 
 export function useApi<T>(url: string | null, { refreshMs }: { refreshMs?: number } = {}) {

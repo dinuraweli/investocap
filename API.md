@@ -30,6 +30,16 @@ User data (watchlists, transactions) lives in Supabase Postgres with row-level s
 | `POST /api/portfolio/sync {positions:[{symbol,quantity,totalCost}], apply?, asOf?, closeSymbols?}` | Import or re-sync holdings from a broker (ATrad) export. Without `apply` it previews the buy/sell changes needed; with `apply: true` it records them as transactions (all or nothing) |
 | `GET /api/portfolio/history?range=1W\|1M\|3M\|1Y\|ALL` | value series + flow-adjusted `gain`/`returnPct` (Modified Dietz) |
 
+## Reports (Gemini analyser)
+| Route | Purpose |
+|---|---|
+| `GET /api/reports/:symbol` | Public. Reports the CSE holds for a company: `{id, kind: quarterly\|annual\|other, title, date, path}` |
+| `GET /api/reports/analyses?symbol=` | Signed in. The user's saved analyses |
+| `POST /api/reports/key-check` | Signed in. Header `x-gemini-key`. Verifies the key and returns the model that will be used |
+| `POST /api/reports/analyse {symbol, reportId, force?}` | Signed in. Header `x-gemini-key`. Downloads the report from the CSE, has Gemini analyse it, saves the result. Returns the saved copy (without calling Gemini) if it already exists, unless `force`. Capped at 20 per hour per user |
+
+The Gemini key is only ever read from the `x-gemini-key` header, used for that request, and discarded.
+
 ## Ops
 `POST /api/cron/eod` with `Authorization: Bearer $CRON_SECRET` snapshots the latest session's closes (run after 14:30 SLT).
 

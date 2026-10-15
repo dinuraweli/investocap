@@ -38,3 +38,11 @@ export interface PortfolioHistoryResponse {
 }
 export interface WatchlistsResponse { fetchedAt: number; stale: boolean; watchlists: { id: number; name: string; stocks: QuoteWithSector[] }[] }
 export interface User { id: string; email: string; name: string }
+
+import type { CompanyReport } from "./cse/client.ts";
+import type { ReportAnalysis } from "./reports/analysis.ts";
+export type { CompanyReport, ReportAnalysis };
+export interface ReportsResponse { symbol: string; name: string; stale: boolean; reports: CompanyReport[] }
+export interface SavedAnalysis {
+  reportId: number; symbol: string; kind: "annual" | "quarterly" | "other"; title: string; reportDate: string | null; pdfPath: string; model: string; createdAt: string; analysis: ReportAnalysis; cached?: boolean;
+}

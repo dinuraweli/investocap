@@ -98,3 +98,44 @@ export async function insertTransactions(db: Db, rows: Omit<TxRecord, "id">[]): 
   if (rows.length === 0) return;
   check(await db.from("transactions").insert(rows.map((t) => ({ symbol: t.symbol, side: t.side, quantity: t.quantity, price: t.price, fees: t.fees, traded_on: t.tradedOn, note: t.note }))));
 }
+
+// ---- report analyses (private per user; produced with that user's own Gemini key) ------------
+
+import type { ReportAnalysis } from "../reports/analysis.ts";
+
+export interface SavedAnalysis {
+  reportId: number;
+  symbol: string;
+  kind: "annual" | "quarterly" | "other";
+  title: string;
+  reportDate: string | null;
+  pdfPath: string;
+  model: string;
+  createdAt: string;
+  analysis: ReportAnalysis;
+}
+
+interface AnalysisRow {
+  report_id: number; symbol: string; kind: SavedAnalysis["kind"]; title: string; report_date: string | null; pdf_path: string; model: string; created_at: string; analysis: ReportAnalysis;
+}
+const COLS = "report_id, symbol, kind, title, report_date, pdf_path, model, created_at, analysis";
+const toSaved = (r: AnalysisRow): SavedAnalysis => ({ reportId: Number(r.report_id), symbol: r.symbol, kind: r.kind, title: r.title, reportDate: r.report_date, pdfPath: r.pdf_path, model: r.model, createdAt: r.created_at, analysis: r.analysis });
+
+export async function listAnalyses(db: Db, symbol?: string): Promise<SavedAnalysis[]> {
+  let q = db.from("report_analyses").select(COLS).order("report_date", { ascending: false, nullsFirst: false }).limit(100);
+  if (symbol) q = q.eq("symbol", symbol);
+  return (check(await q) as AnalysisRow[]).map(toSaved);
+}
+
+export async function getAnalysis(db: Db, reportId: number): Promise<SavedAnalysis | null> {
+  const row = check(await db.from("report_analyses").select(COLS).eq("report_id", reportId).maybeSingle()) as AnalysisRow | null;
+  return row ? toSaved(row) : null;
+}
+
+/** Insert or replace this user's analysis of a report. */
+export async function saveAnalysis(db: Db, a: Omit<SavedAnalysis, "createdAt">): Promise<void> {
+  check(await db.from("report_analyses").upsert(
+    { report_id: a.reportId, symbol: a.symbol, kind: a.kind, title: a.title, report_date: a.reportDate, pdf_path: a.pdfPath, model: a.model, analysis: a.analysis, created_at: new Date().toISOString() },
+    { onConflict: "user_id,report_id" },
+  ));
+}

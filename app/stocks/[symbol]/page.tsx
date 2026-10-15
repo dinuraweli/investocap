@@ -61,6 +61,7 @@ export default function StockPage({ params }: { params: Promise<{ symbol: string
                   <p className="text-sm text-muted">{shortSymbol(q.symbol)} · CSE · LKR</p>
                 </div>
                 <div className="flex gap-2">
+                  <Link href={`/reports/${encodeURIComponent(q.symbol)}`} className="flex h-10 items-center rounded-xl border border-line bg-surface px-4 text-sm font-semibold hover:bg-subtle">Reports</Link>
                   <WatchButton symbol={q.symbol} />
                   <button onClick={() => openTrade({ symbol: q.symbol })} className="h-10 rounded-xl bg-brand px-4 text-sm font-semibold text-white hover:opacity-90">Add trade</button>
                 </div>

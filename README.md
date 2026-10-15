@@ -40,6 +40,14 @@ Schedule `POST /api/cron/eod` with `Authorization: Bearer $CRON_SECRET` after 14
 ### Importing a portfolio from ATrad
 On the Portfolio page choose **Import from ATrad** (or **Sync from ATrad** once you have holdings) and pick the `.xlsx` you download from ATrad (Portfolio, Excel). The file is parsed in the browser; only symbol, quantity and total cost are sent. Costs come from ATrad's Total Cost (which already includes buying charges), and the export has no trade dates, so holdings start on the date you choose. After that, prices update automatically; sync again (or use New Trade) only after you buy or sell. Sales found by a re-sync are priced at today's price as an estimate, because the export has no sale prices.
 
+### Report analyser
+**Reports** in the nav lists every annual report, quarterly statement and press release a company has filed with the CSE (fetched from the CSE, PDFs from `cdn.cse.lk`). **Analyse** has Google Gemini read one and returns a plain-English summary, key numbers with PDF page references, highlights, things to check and the auditor's opinion. Margins, growth and ratios are calculated by the app, not the AI.
+
+- **Bring your own key.** Users paste their own Gemini API key (free tier available at https://aistudio.google.com/apikey). It is stored only in their browser, sent in a request header, used once and never stored or logged on the server. No server-side Gemini key is needed.
+- Analyses are saved privately per user (row-level security) so reopening costs nothing. Reports over about 10 MB are sent through Gemini's Files API and deleted afterwards.
+- The AI is told never to give investment advice, ratings or price targets, and every analysis carries an "AI-generated, verify against the PDF" notice.
+- Tests run against a fake Gemini server (`tests/gemini.test.ts`), so no key is needed to run `npm test`.
+
 See [API.md](API.md) for the HTTP API.
 
 ## Deploying (Vercel)

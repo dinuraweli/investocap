@@ -9,6 +9,7 @@ const TABS = [
   { href: "/", label: "Portfolio" },
   { href: "/markets", label: "Markets" },
   { href: "/watchlist", label: "Watchlist" },
+  { href: "/reports", label: "Reports" },
 ] as const;
 
 export function NavTabs() {

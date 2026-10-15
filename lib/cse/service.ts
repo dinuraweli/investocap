@@ -89,6 +89,9 @@ export async function getMarket() {
   };
 }
 
+/** CSE reports (annual, quarterly, other) for a symbol. The listing changes rarely, so cache it for 10 minutes. */
+export const getCompanyReports = (symbol: string) => cached(`reports:${symbol}`, TTL.history, () => cse.fetchCompanyReports(symbol));
+
 export const getSectors = () => cached("sectors", TTL.sectors, cse.fetchSectors);
 export const getStockDetail = (symbol: string) => cached(`detail:${symbol}`, TTL.detail, () => cse.fetchStockDetail(symbol));
 

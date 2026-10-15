@@ -228,3 +228,49 @@ export async function fetchIndexHistory(chartId: number, period: PeriodCode): Pr
     return { t: num(o, "d", "index point"), price: num(o, "v", "index point") };
   });
 }
+
+// ---- company reports (financial statements, annual reports) ---------------------------------
+
+export interface CompanyReport {
+  id: number;
+  kind: "annual" | "quarterly" | "other";
+  title: string;
+  date: string | null; // YYYY-MM-DD (the date the report is dated, not the upload time)
+  path: string; // relative path under https://cdn.cse.lk/
+}
+
+const REPORT_PATH_RE = /^(?:cmt\/)?upload_report_file\/[A-Za-z0-9_.-]+\.pdf$/i;
+export const isReportPath = (p: string) => REPORT_PATH_RE.test(p);
+
+/** All annual, quarterly and other reports CSE holds for a symbol, newest first. */
+export async function fetchCompanyReports(symbol: string): Promise<CompanyReport[]> {
+  // This endpoint wants the symbol in the query string of a POST.
+  const json = obj(await post(`financials?symbol=${encodeURIComponent(symbol)}`), "financials");
+  const groups: [string, CompanyReport["kind"]][] = [["infoQuarterlyData", "quarterly"], ["infoAnnualData", "annual"], ["infoOtherData", "other"]];
+  const out: CompanyReport[] = [];
+  for (const [key, kind] of groups) {
+    for (const raw of json[key] === undefined || json[key] === null ? [] : arr(json[key], `financials.${key}`)) {
+      const o = obj(raw, `financials.${key} item`);
+      const path = typeof o.path === "string" ? o.path : "";
+      if (!isReportPath(path)) continue; // skip rows without a usable PDF
+      const ts = numOr(o, "manualDate", null);
+      out.push({ id: num(o, "id", "report"), kind, title: str(o, "fileText", "report"), date: ts === null ? null : new Date(ts).toLocaleDateString("en-CA", { timeZone: "Asia/Colombo" }), path });
+    }
+  }
+  return out.sort((a, b) => ((b.date ?? "") < (a.date ?? "") ? -1 : (b.date ?? "") > (a.date ?? "") ? 1 : b.id - a.id));
+}
+
+const MAX_PDF_BYTES = 40 * 1024 * 1024;
+
+/** Download a report PDF from the CSE CDN. The path must come from the CSE listing (validated here too). */
+export async function fetchReportPdf(path: string): Promise<ArrayBuffer> {
+  if (!isReportPath(path)) throw new CseError("Refusing to download an unexpected path");
+  const res = await fetch(`https://cdn.cse.lk/${path}`, { headers: { "User-Agent": HEADERS["User-Agent"], Referer: "https://www.cse.lk/" }, signal: AbortSignal.timeout(60_000), cache: "no-store" });
+  if (!res.ok) throw new CseError(`Could not download the report (HTTP ${res.status})`);
+  const declared = Number(res.headers.get("content-length") ?? 0);
+  if (declared > MAX_PDF_BYTES) throw new CseError("This report is too large to analyse (over 40 MB).");
+  const bytes = await res.arrayBuffer();
+  if (bytes.byteLength > MAX_PDF_BYTES) throw new CseError("This report is too large to analyse (over 40 MB).");
+  if (new TextDecoder().decode(bytes.slice(0, 5)) !== "%PDF-") throw new CseError("The downloaded file is not a PDF.");
+  return bytes;
+}
