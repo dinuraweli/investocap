@@ -15,6 +15,13 @@ export class GeminiError extends Error {
   }
 }
 
+/**
+ * Loose sanity check on a pasted key: Google has issued several formats ("AIza..." and newer "AQ.…" keys that
+ * contain dots), so we only reject things that are clearly not a key (spaces, quotes, newlines, wrong length).
+ * Whether it actually works is decided by Gemini itself.
+ */
+export const isPlausibleKey = (key: string) => /^[A-Za-z0-9._~+/=-]{20,300}$/.test(key);
+
 const scrub = (text: string, key: string) => (key ? text.split(key).join("[key]") : text);
 
 // ---- model selection (pure) -------------------------------------------------------------------

@@ -1,7 +1,7 @@
 import { test, after, before } from "node:test";
 import assert from "node:assert/strict";
 import { createServer, type IncomingMessage, type Server } from "node:http";
-import { analysePdf, buildRequest, checkKey, GeminiError, parseGenerateResponse, pickModel } from "../lib/reports/gemini.ts";
+import { analysePdf, buildRequest, checkKey, GeminiError, isPlausibleKey, parseGenerateResponse, pickModel } from "../lib/reports/gemini.ts";
 import { isReportPath } from "../lib/cse/client.ts";
 
 const KEY = "AIzaFAKE-test-key-123";
@@ -136,4 +136,9 @@ test("only CSE report PDF paths are accepted (no SSRF or traversal)", () => {
   assert.ok(isReportPath("cmt/upload_report_file/508_1785229278745.pdf"));
   assert.ok(isReportPath("upload_report_file/508_1527245600414.pdf"));
   for (const bad of ["http://evil.com/a.pdf", "../etc/passwd", "cmt/upload_report_file/../../x.pdf", "cmt/upload_report_file/a.exe", "//evil.com/upload_report_file/a.pdf", ""]) assert.ok(!isReportPath(bad), bad);
+});
+
+test("accepts every Google key format (including newer keys with dots) and rejects obvious non-keys", () => {
+  for (const ok of ["AIzaSyA1b2C3d4E5f6G7h8I9j0K1l2M3n4O5p6Q", "AQ.Ab8RN6IexampleExampleExampleExample_-1234", "A".repeat(20)]) assert.ok(isPlausibleKey(ok), ok);
+  for (const bad of ["", "short", "has space in the middle 1234567890", "quoted\"key1234567890123456", "new\nline1234567890123456789", "A".repeat(301)]) assert.ok(!isPlausibleKey(bad), bad);
 });
