@@ -101,7 +101,7 @@ export async function insertTransactions(db: Db, rows: Omit<TxRecord, "id">[]): 
 
 // ---- report analyses (private per user; produced with that user's own Gemini key) ------------
 
-import type { ReportAnalysis } from "../reports/analysis.ts";
+import { validateAnalysis, type ReportAnalysis } from "../reports/analysis.ts";
 
 export interface SavedAnalysis {
   reportId: number;
@@ -119,12 +119,17 @@ interface AnalysisRow {
   report_id: number; symbol: string; kind: SavedAnalysis["kind"]; title: string; report_date: string | null; pdf_path: string; model: string; created_at: string; analysis: ReportAnalysis;
 }
 const COLS = "report_id, symbol, kind, title, report_date, pdf_path, model, created_at, analysis";
-const toSaved = (r: AnalysisRow): SavedAnalysis => ({ reportId: Number(r.report_id), symbol: r.symbol, kind: r.kind, title: r.title, reportDate: r.report_date, pdfPath: r.pdf_path, model: r.model, createdAt: r.created_at, analysis: r.analysis });
+/** Analyses saved by older versions lack newer fields; re-validating fills safe defaults. An unusable row is skipped, not fatal. */
+function toSaved(r: AnalysisRow): SavedAnalysis | null {
+  let analysis: ReportAnalysis;
+  try { analysis = validateAnalysis(r.analysis); } catch { return null; }
+  return { reportId: Number(r.report_id), symbol: r.symbol, kind: r.kind, title: r.title, reportDate: r.report_date, pdfPath: r.pdf_path, model: r.model, createdAt: r.created_at, analysis };
+}
 
 export async function listAnalyses(db: Db, symbol?: string): Promise<SavedAnalysis[]> {
   let q = db.from("report_analyses").select(COLS).order("report_date", { ascending: false, nullsFirst: false }).limit(100);
   if (symbol) q = q.eq("symbol", symbol);
-  return (check(await q) as AnalysisRow[]).map(toSaved);
+  return (check(await q) as AnalysisRow[]).map(toSaved).filter((x): x is SavedAnalysis => x !== null);
 }
 
 export async function getAnalysis(db: Db, reportId: number): Promise<SavedAnalysis | null> {

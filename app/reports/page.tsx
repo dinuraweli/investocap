@@ -20,6 +20,7 @@ function Home() {
       <section className="card p-5">
         <h2 className="text-[15px] font-semibold">Find a company</h2>
         <SearchBox className="mt-3 max-w-md" placeholder="Search by name or symbol" onPick={(s) => router.push(`/reports/${encodeURIComponent(s)}`)} />
+        <Link href="/reports/compare" className="mt-4 inline-block text-sm font-medium text-brand hover:underline">Compare companies side by side</Link>
       </section>
 
       <section className="card overflow-hidden">

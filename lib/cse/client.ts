@@ -265,11 +265,20 @@ const MAX_PDF_BYTES = 40 * 1024 * 1024;
 /** Download a report PDF from the CSE CDN. The path must come from the CSE listing (validated here too). */
 export async function fetchReportPdf(path: string): Promise<ArrayBuffer> {
   if (!isReportPath(path)) throw new CseError("Refusing to download an unexpected path");
-  const res = await fetch(`https://cdn.cse.lk/${path}`, { headers: { "User-Agent": HEADERS["User-Agent"], Referer: "https://www.cse.lk/" }, signal: AbortSignal.timeout(60_000), cache: "no-store" });
-  if (!res.ok) throw new CseError(`Could not download the report (HTTP ${res.status})`);
-  const declared = Number(res.headers.get("content-length") ?? 0);
-  if (declared > MAX_PDF_BYTES) throw new CseError("This report is too large to analyse (over 40 MB).");
-  const bytes = await res.arrayBuffer();
+  // The CSE's CDN can be slow, so allow two minutes for the whole download (the function itself may run for five).
+  let res: Response;
+  let bytes: ArrayBuffer;
+  try {
+    res = await fetch(`https://cdn.cse.lk/${path}`, { headers: { "User-Agent": HEADERS["User-Agent"], Referer: "https://www.cse.lk/" }, signal: AbortSignal.timeout(120_000), cache: "no-store" });
+    if (!res.ok) throw new CseError(`Could not download the report (HTTP ${res.status})`);
+    const declared = Number(res.headers.get("content-length") ?? 0);
+    if (declared > MAX_PDF_BYTES) throw new CseError("This report is too large to analyse (over 40 MB).");
+    bytes = await res.arrayBuffer();
+  } catch (e) {
+    if (e instanceof CseError) throw e;
+    const timedOut = (e as Error).name === "TimeoutError" || (e as Error).name === "AbortError";
+    throw new CseError(timedOut ? "The CSE's server was too slow to download this report. Please try again in a moment." : "Could not download the report from the CSE. Please try again.");
+  }
   if (bytes.byteLength > MAX_PDF_BYTES) throw new CseError("This report is too large to analyse (over 40 MB).");
   if (new TextDecoder().decode(bytes.slice(0, 5)) !== "%PDF-") throw new CseError("The downloaded file is not a PDF.");
   return bytes;

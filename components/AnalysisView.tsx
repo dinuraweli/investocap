@@ -1,5 +1,9 @@
 import type { SavedAnalysis } from "@/lib/api-types";
-import { derivedRatios, growthPct, type AuditorOpinion, type Metric, type Severity } from "@/lib/reports/analysis";
+import type { AuditorOpinion, Metric, Severity } from "@/lib/reports/analysis";
+import { computeRatios, growthPct } from "@/lib/reports/ratios";
+import BridgeChart from "./charts/BridgeChart";
+import CompareBars from "./charts/CompareBars";
+import RatioTable from "./RatioTable";
 import { fmtFullDate, fmtLKR, toneText } from "@/lib/format";
 
 // Whole numbers print plainly (800, 12,500); fractions keep two decimals (0.07, 3.10).
@@ -33,7 +37,7 @@ const Page = ({ n }: { n: number | null }) => (n ? <span className="ml-2 whitesp
 
 export default function AnalysisView({ saved }: { saved: SavedAnalysis }) {
   const a = saved.analysis;
-  const ratios = derivedRatios(a);
+  const ratios = computeRatios(a);
   const aud = AUDITOR[a.auditor.opinion];
   const prevLabel = a.metrics.find((m) => m.previousLabel)?.previousLabel ?? "Previous";
 
@@ -79,21 +83,12 @@ export default function AnalysisView({ saved }: { saved: SavedAnalysis }) {
               </tbody>
             </table>
           </div>
-          {ratios.length > 0 && (
-            <div className="border-t border-line p-5">
-              <h3 className="text-sm font-semibold">Calculated by InvestoCap</h3>
-              <dl className="mt-2 grid gap-x-8 sm:grid-cols-2">
-                {ratios.map((r) => (
-                  <div key={r.key} className="flex justify-between border-b border-line py-2 text-sm">
-                    <dt className="text-muted">{r.label}</dt>
-                    <dd className="money font-semibold">{r.current === null ? "–" : r.current.toFixed(r.suffix === "%" ? 1 : 2)}{r.suffix}<span className="ml-2 font-normal text-muted">{r.previous === null ? "" : `(was ${r.previous.toFixed(r.suffix === "%" ? 1 : 2)}${r.suffix})`}</span></dd>
-                  </div>
-                ))}
-              </dl>
-            </div>
-          )}
         </section>
       )}
+
+      <CompareBars analysis={a} />
+      <BridgeChart analysis={a} />
+      <RatioTable groups={ratios} subtitle={`Calculated by InvestoCap from this report (${a.periodLabel}). Hover a label to see how it is worked out.`} />
 
       <div className="grid gap-4 lg:grid-cols-2">
         <section className="card p-5">

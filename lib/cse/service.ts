@@ -102,7 +102,8 @@ export async function getStockHistory(quote: Quote, range: RangeKey): Promise<{ 
   const r = await cached(`hist:${quote.id}:${period}`, ttl, () => cse.fetchStockHistory(quote.id, period));
   let points = r.value;
   if (range === "ALL" && points.length) {
-    const older = await store.olderDaily(quote.id, colomboDate(points[0].t));
+    // Older rows are a bonus; if our own database is unavailable, still show CSE's year of history.
+    const older = await store.olderDaily(quote.id, colomboDate(points[0].t)).catch((e) => { console.error("[history older rows]", e); return []; });
     points = [...older.map((o) => ({ t: o.t, price: o.close, high: o.high ?? undefined, low: o.low ?? undefined, volume: o.volume ?? undefined })), ...points];
   }
   return { points, stale: r.stale };

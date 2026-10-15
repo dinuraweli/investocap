@@ -16,7 +16,9 @@ function smoothPath(pts: [number, number][]) {
 const W = 1000, H = 100;
 
 /** Responsive area chart with right-hand axis and a hover read-out. `intraday` switches x labels to times. */
-export default function AreaChart({ points, intraday = false, color = "#3b2fe0", height = "h-[240px] sm:h-[280px]", decimals = 0 }: { points: ChartPoint[]; intraday?: boolean; color?: string; height?: string; decimals?: number }) {
+export interface ChartMarker { t: number; label: string }
+
+export default function AreaChart({ points, intraday = false, color = "#3b2fe0", height = "h-[240px] sm:h-[280px]", decimals = 0, markers = [] }: { points: ChartPoint[]; intraday?: boolean; color?: string; height?: string; decimals?: number; markers?: ChartMarker[] }) {
   const gid = useId();
   const [hover, setHover] = useState<number | null>(null);
 
@@ -49,6 +51,10 @@ export default function AreaChart({ points, intraday = false, color = "#3b2fe0",
     setHover(best);
   };
   const hp = hover !== null ? points[hover] : null;
+  // Markers (e.g. report dates) that fall inside the plotted range, and the one nearest the hover point.
+  const t0 = points[0].t, t1 = points[points.length - 1].t;
+  const placed = markers.filter((m) => m.t >= t0 && m.t <= t1 && t1 > t0).map((m) => ({ ...m, x: (m.t - t0) / (t1 - t0) }));
+  const near = hp ? placed.filter((m) => Math.abs(m.t - hp.t) <= (t1 - t0) / 40).sort((a, b) => Math.abs(a.t - hp.t) - Math.abs(b.t - hp.t))[0] : undefined;
 
   return (
     <div>
@@ -58,6 +64,7 @@ export default function AreaChart({ points, intraday = false, color = "#3b2fe0",
             <linearGradient id={gid} x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stopColor={color} stopOpacity="0.2" /><stop offset="100%" stopColor={color} stopOpacity="0" /></linearGradient>
           </defs>
           {[0, 25, 50, 75, 100].map((y) => <line key={y} x1="0" x2={W} y1={y} y2={y} stroke="#e8eaef" strokeWidth="1" vectorEffect="non-scaling-stroke" />)}
+          {placed.map((m) => <line key={m.t + m.label} x1={m.x * W} x2={m.x * W} y1="0" y2={H} stroke={color} strokeOpacity="0.55" strokeWidth="1.5" strokeDasharray="4 4" vectorEffect="non-scaling-stroke" />)}
           <path d={geo.area} fill={`url(#${gid})`} />
           <path d={geo.line} fill="none" stroke={color} strokeWidth="2.2" strokeLinecap="round" vectorEffect="non-scaling-stroke" />
           {hover !== null && <line x1={geo.xs[hover]} x2={geo.xs[hover]} y1="0" y2={H} stroke={color} strokeOpacity="0.4" strokeWidth="1" vectorEffect="non-scaling-stroke" />}
@@ -65,6 +72,9 @@ export default function AreaChart({ points, intraday = false, color = "#3b2fe0",
         {hover !== null && (
           <span className="pointer-events-none absolute h-3 w-3 -translate-x-1/2 -translate-y-1/2 rounded-full border-2 border-white" style={{ left: `calc((100% - 3.5rem) * ${geo.xs[hover] / W})`, top: `${geo.ys[hover]}%`, background: color }} />
         )}
+        {placed.map((m) => (
+          <span key={`d${m.t}${m.label}`} title={m.label} aria-label={m.label} className="absolute top-0 h-0 w-0 -translate-x-1/2 border-x-[5px] border-t-[8px] border-x-transparent" style={{ left: `calc((100% - 3.5rem) * ${m.x})`, borderTopColor: color }} />
+        ))}
         {geo.ticks.map((t, i) => (
           <span key={i} className="money absolute right-0 -translate-y-1/2 text-xs text-muted sm:text-sm" style={{ top: `${i * 25}%` }}>{compact(t, decimals ? 2 : 2)}</span>
         ))}
@@ -72,6 +82,7 @@ export default function AreaChart({ points, intraday = false, color = "#3b2fe0",
           <div className="pointer-events-none absolute top-0 z-10 -translate-y-full rounded-lg bg-ink px-2.5 py-1.5 text-xs text-white shadow-lg" style={{ left: `clamp(0px, calc((100% - 3.5rem) * ${geo.xs[hover!] / W} - 50px), calc(100% - 7rem - 100px))` }}>
             <div className="money font-semibold">LKR {fmtLKR(hp.v, decimals)}</div>
             <div className="opacity-70">{intraday ? fmtTime(hp.t) : fmtFullDate(hp.t)}</div>
+            {near && <div className="mt-0.5 max-w-[14rem] whitespace-normal font-semibold text-[#c9c4ff]">{near.label}</div>}
           </div>
         )}
       </div>

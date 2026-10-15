@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { AnalysisFormatError, derivedRatios, growthPct, validateAnalysis } from "../lib/reports/analysis.ts";
+import { AnalysisFormatError, validateAnalysis } from "../lib/reports/analysis.ts";
 
 const good = () => ({
   reportType: "interim", periodLabel: "Quarter ended 30 June 2026", periodEnd: "2026-06-30", scope: "Group", currency: "lkr",
@@ -46,25 +46,17 @@ test("bad enums and dates fall back safely instead of failing", () => {
   assert.equal(a.auditor.opinion, "unclear");
 });
 
-test("growth is only computed when meaningful", () => {
-  assert.equal(growthPct(120, 100), 20);
-  assert.equal(growthPct(80, 100), -20);
-  assert.equal(growthPct(10, 0), null);
-  assert.equal(growthPct(-5, 10), null); // swing into loss
-  assert.equal(growthPct(10, -5), null); // swing out of loss
-  assert.equal(growthPct(null, 10), null);
-});
-
-test("derived ratios are computed by the app, and skipped when units differ", () => {
-  const a = validateAnalysis({ ...good(), metrics: [
-    { key: "revenue", label: "Revenue", current: 1200, previous: 1000, unit: "LKR million" },
-    { key: "net_profit", label: "Net profit", current: 120, previous: 90, unit: "LKR million" },
-    { key: "borrowings", label: "Borrowings", current: 500, previous: 450, unit: "LKR million" },
-    { key: "total_equity", label: "Equity", current: 1000, previous: 900, unit: "LKR '000" }, // different unit
+test("period length, history and the extra metric keys are validated", () => {
+  const a = validateAnalysis({ ...good(), periodMonths: 3, history: [
+    { period: "2023/24", periodEnd: "2024-03-31", values: [{ key: "Revenue", value: 900, unit: "LKR million" }, { key: "eps", value: 2.1, unit: "LKR" }, { key: "bad", value: null, unit: "x" }] },
+    { period: "2023/24", values: [{ key: "revenue", value: 1, unit: "m" }] }, // duplicate period dropped
+    { period: "empty", values: [] }, // no values dropped
+    "junk",
   ] });
-  const r = derivedRatios(a);
-  const net = r.find((x) => x.key === "net_margin")!;
-  assert.equal(net.current, 10);
-  assert.equal(net.previous, 9);
-  assert.equal(r.find((x) => x.key === "debt_to_equity"), undefined);
+  assert.equal(a.periodMonths, 3);
+  assert.equal(a.history.length, 1);
+  assert.deepEqual(a.history[0].values.map((v) => v.key), ["revenue", "eps"]);
+  assert.equal(validateAnalysis({ ...good(), periodMonths: 7.5 }).periodMonths, null);
+  assert.equal(validateAnalysis({ ...good(), periodMonths: 30 }).periodMonths, null);
+  assert.deepEqual(validateAnalysis(good()).history, []); // older/shorter responses still validate
 });

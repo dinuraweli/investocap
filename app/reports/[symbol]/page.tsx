@@ -5,11 +5,12 @@ import AnalysisView from "@/components/AnalysisView";
 import GeminiKeyCard from "@/components/GeminiKeyCard";
 import RequireAuth from "@/components/RequireAuth";
 import { ErrorNote, Segmented, Skeleton } from "@/components/ui";
-import type { CompanyReport, ReportsResponse, SavedAnalysis } from "@/lib/api-types";
+import type { CompanyReport, ReportsResponse, SavedAnalysis, StockResponse } from "@/lib/api-types";
 import { shortSymbol } from "@/lib/format";
 import { useGeminiKey } from "@/lib/geminiKey";
 import { apiPostStream, useApi } from "@/lib/useApi";
 import AnalysisProgress, { type Run } from "@/components/AnalysisProgress";
+import CompanyInsights, { type BatchState } from "@/components/CompanyInsights";
 
 const KINDS = ["Quarterly", "Annual", "Other"] as const;
 const kindOf = { Quarterly: "quarterly", Annual: "annual", Other: "other" } as const;
@@ -24,6 +25,11 @@ function Page({ symbol }: { symbol: string }) {
   const [running, setRunning] = useState<number | null>(null);
   const [run, setRun] = useState<Run | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
+  const [view, setView] = useState<"Reports" | "Trends & ratios">("Reports");
+  const [batch, setBatch] = useState<BatchState | null>(null);
+  const [batchError, setBatchError] = useState<string | null>(null);
+  const stopRef = useRef(false);
+  const quote = useApi<StockResponse>(`/api/stocks/${encodeURIComponent(symbol)}`);
   const [error, setError] = useState<string | null>(null);
   const panel = useRef<HTMLDivElement>(null);
 
@@ -45,8 +51,8 @@ function Page({ symbol }: { symbol: string }) {
   const current = openId !== null ? byId.get(openId) : undefined;
   useEffect(() => { if (current) panel.current?.scrollIntoView({ behavior: "smooth", block: "start" }); }, [current?.reportId]); // bring a freshly opened analysis into view
 
-  async function analyse(r: CompanyReport, force = false) {
-    if (!key) { setError("Add your Gemini API key first."); return; }
+  async function analyse(r: CompanyReport, force = false, open = true): Promise<boolean> {
+    if (!key) { setError("Add your Gemini API key first."); return false; }
     setError(null);
     setNotice(null);
     setRunning(r.id);
@@ -57,15 +63,36 @@ function Page({ symbol }: { symbol: string }) {
         else if (e.type === "fallback") setRun((cur) => cur && { ...cur, notes: [...cur.notes, e.message] });
       });
       setFresh((f) => ({ ...f, [r.id]: result }));
-      setOpenId(r.id);
+      if (open) setOpenId(r.id);
       const tried = (result as { attempts?: { model: string; reason: string }[] }).attempts ?? [];
-      if (tried.length > 0) setNotice(`Analysed with ${result.model}. ${tried.map((t) => `${t.model} ${t.reason}`).join("; ")}.`);
+      if (open && tried.length > 0) setNotice(`Analysed with ${result.model}. ${tried.map((t) => `${t.model} ${t.reason}`).join("; ")}.`);
+      return true;
     } catch (e) {
       setError((e as Error).message);
+      return false;
     } finally {
       setRunning(null);
       setRun(null);
     }
+  }
+
+  const quarterly = (list.data?.reports ?? []).filter((r) => r.kind === "quarterly");
+  const unanalysedQuarters = quarterly.slice(0, 8).filter((r) => !byId.has(r.id)).length;
+  const allAnalyses = useMemo(() => [...byId.values()], [byId]);
+
+  /** Analyse the newest `n` quarterly reports that have not been analysed yet, one after another. */
+  async function buildHistory(n: number) {
+    const todo = quarterly.slice(0, n).filter((r) => !byId.has(r.id));
+    if (todo.length === 0) return;
+    stopRef.current = false;
+    setBatchError(null);
+    for (let i = 0; i < todo.length; i++) {
+      if (stopRef.current) break;
+      setBatch({ total: todo.length, index: i + 1, title: todo[i].title });
+      const ok = await analyse(todo[i], false, false);
+      if (!ok) { setBatchError(`Stopped at report ${i + 1} of ${todo.length}. The ones before it were saved. Fix the problem shown above and run it again to continue.`); break; }
+    }
+    setBatch(null);
   }
 
   if (list.error?.status === 404) return <div className="card p-8 text-center"><h1 className="text-lg font-semibold">We couldn&apos;t find &ldquo;{symbol}&rdquo;</h1><Link href="/reports" className="mt-2 inline-block text-sm font-medium text-brand">Back to reports</Link></div>;
@@ -80,11 +107,16 @@ function Page({ symbol }: { symbol: string }) {
 
       <GeminiKeyCard />
       {error && <ErrorNote message={error} />}
+      <Segmented options={["Reports", "Trends & ratios"] as const} value={view} onChange={setView} />
 
-      {run && <AnalysisProgress run={run} />}
-      {notice && !run && <p className="rounded-xl bg-[#fff4e5] px-4 py-3 text-sm text-warn">{notice}</p>}
+      {view === "Trends & ratios" && (
+        <CompanyInsights symbol={symbol} analyses={allAnalyses} loading={saved.loading} price={quote.data?.quote.price ?? null} marketCap={quote.data?.quote.marketCap ?? null} unanalysedQuarters={unanalysedQuarters} hasKey={!!key} batch={batch} run={run} batchError={batchError} onBuild={buildHistory} onStop={() => { stopRef.current = true; }} />
+      )}
 
-      {current && (
+      {view === "Reports" && run && !batch && <AnalysisProgress run={run} />}
+      {view === "Reports" && notice && !run && <p className="rounded-xl bg-[#fff4e5] px-4 py-3 text-sm text-warn">{notice}</p>}
+
+      {view === "Reports" && current && (
         <div ref={panel} className="scroll-mt-4">
           <div className="mb-3 flex items-center justify-between">
             <button onClick={() => setOpenId(null)} className="text-sm font-medium text-brand hover:underline">Close analysis</button>
@@ -94,7 +126,7 @@ function Page({ symbol }: { symbol: string }) {
         </div>
       )}
 
-      <section className="card overflow-hidden">
+      {view === "Reports" && <section className="card overflow-hidden">
         <div className="flex flex-wrap items-center justify-between gap-3 p-5">
           <h2 className="text-[15px] font-semibold">Reports filed with the CSE</h2>
           <Segmented options={KINDS.map((k) => k) as unknown as readonly (typeof KINDS)[number][]} value={tab} onChange={setTab} />
@@ -125,7 +157,7 @@ function Page({ symbol }: { symbol: string }) {
               })}
             </ul>
           )}
-      </section>
+      </section>}
     </div>
   );
 }
