@@ -31,11 +31,32 @@ export default function PortfolioValueCard({ portfolio, market, onImport }: { po
             </div>
           ) : <Skeleton className="h-12 w-72" />}
           {totals && !empty && (
-            <div className="mt-3 flex flex-wrap items-center gap-2 text-sm">
-              <span className={`font-medium ${toneText(totals.dayChange)}`}>{totals.dayChange >= 0 ? "↑" : "↓"} {fmtSigned(totals.dayChange)}</span>
-              <span className={`rounded-md px-2 py-0.5 font-semibold ${toneBg(totals.dayChange)}`}>{totals.dayChangePct >= 0 ? "+" : ""}{totals.dayChangePct.toFixed(2)}%</span>
-              <span className="text-muted">Today · {market?.status.status ?? "..."}</span>
-            </div>
+            <>
+              <div className="mt-3 flex flex-wrap items-center gap-2 text-sm">
+                <span className={`font-medium ${toneText(totals.dayChange)}`}>{totals.dayChange >= 0 ? "↑" : "↓"} {fmtSigned(totals.dayChange)}</span>
+                <span className={`rounded-md px-2 py-0.5 font-semibold ${toneBg(totals.dayChange)}`}>{totals.dayChangePct >= 0 ? "+" : ""}{totals.dayChangePct.toFixed(2)}%</span>
+                <span className="text-muted">Today · {market?.status.status ?? "..."}</span>
+              </div>
+              <dl className="mt-4 flex flex-wrap gap-x-8 gap-y-3">
+                <div>
+                  <dt className="text-xs text-muted">Unrealised P&amp;L</dt>
+                  <dd className={`money mt-0.5 flex items-baseline gap-2 text-lg font-semibold ${toneText(totals.unrealised)}`}>
+                    {fmtSigned(totals.unrealised)}
+                    <span className={`rounded-md px-1.5 py-0.5 text-xs font-semibold ${toneBg(totals.unrealised)}`}>{totals.unrealisedPct >= 0 ? "+" : ""}{totals.unrealisedPct.toFixed(2)}%</span>
+                  </dd>
+                </div>
+                <div>
+                  <dt className="text-xs text-muted">Invested</dt>
+                  <dd className="money mt-0.5 text-lg font-semibold">LKR {fmtLKR(totals.cost)}</dd>
+                </div>
+                {totals.realised !== 0 && (
+                  <div>
+                    <dt className="text-xs text-muted">Realised P&amp;L</dt>
+                    <dd className={`money mt-0.5 text-lg font-semibold ${toneText(totals.realised)}`}>{fmtSigned(totals.realised)}</dd>
+                  </div>
+                )}
+              </dl>
+            </>
           )}
         </div>
         <Segmented options={RANGES} value={range} onChange={setRange} />
