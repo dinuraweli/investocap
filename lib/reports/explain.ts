@@ -119,3 +119,61 @@ export function briefPrompt(b: BriefInput): string {
   }
   return `${lines.filter(Boolean).join("\n")}\n\nWrite the brief.`;
 }
+
+// ---- "explain my position" -----------------------------------------------------------------------
+
+export const POSITION_SYSTEM = `You explain how one investor's holding in a single Colombo Stock Exchange company has performed, from the figures provided.\n${NO_ADVICE}\n- The figures are the user's own position (quantity, cost, value, profit or loss and price history summary). Report what they show in plain English.\n- Keep it under 90 words.`;
+
+export const POSITION_SCHEMA = {
+  type: "OBJECT",
+  properties: {
+    summary: { type: "STRING", description: "2 to 4 plain-English sentences on how this holding has done" },
+    points: { type: "ARRAY", items: { type: "STRING" }, description: "up to 3 short factual observations" },
+  },
+  required: ["summary", "points"],
+} as const;
+
+export interface PositionExplanation { summary: string; points: string[] }
+
+export function validatePositionExplanation(raw: unknown): PositionExplanation {
+  if (typeof raw !== "object" || raw === null) throw new ExplainFormatError("The AI did not return an explanation.");
+  const r = raw as Record<string, unknown>;
+  const summary = clean(r.summary, 900);
+  if (!summary) throw new ExplainFormatError("The AI response had no usable summary.");
+  const points = (Array.isArray(r.points) ? r.points : []).slice(0, 3).map((p) => clean(p, 200)).filter(Boolean);
+  return { summary, points };
+}
+
+export interface PositionInput {
+  company: string;
+  quantity: number;
+  avgCost: number;
+  currentPrice: number;
+  invested: number;
+  marketValue: number;
+  unrealised: number;
+  returnPct: number;
+  firstPurchase: string | null;
+  highClose: number | null;
+  lowClose: number | null;
+  bestDay: { date: string; amount: number } | null;
+  worstDay: { date: string; amount: number } | null;
+}
+
+export function positionPrompt(p: PositionInput): string {
+  const lines = [
+    `Company: ${p.company}`,
+    `Shares held: ${n(p.quantity, 0)}`,
+    `Average cost: LKR ${n(p.avgCost)}`,
+    `Current price: LKR ${n(p.currentPrice)}`,
+    `Amount invested (cost): LKR ${n(p.invested)}`,
+    `Current market value: LKR ${n(p.marketValue)}`,
+    `Unrealised profit/loss: LKR ${n(p.unrealised)} (${p.returnPct >= 0 ? "+" : ""}${p.returnPct.toFixed(2)}%)`,
+    p.firstPurchase ? `First bought: ${p.firstPurchase}` : null,
+    p.highClose !== null ? `Highest price while held: LKR ${n(p.highClose)}` : null,
+    p.lowClose !== null ? `Lowest price while held: LKR ${n(p.lowClose)}` : null,
+    p.bestDay ? `Best single day: +LKR ${n(p.bestDay.amount)} on ${p.bestDay.date}` : null,
+    p.worstDay ? `Worst single day: LKR ${n(p.worstDay.amount)} on ${p.worstDay.date}` : null,
+  ];
+  return `${lines.filter(Boolean).join("\n")}\n\nExplain how this holding has performed.`;
+}

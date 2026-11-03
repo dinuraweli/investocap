@@ -40,6 +40,9 @@ Schedule `POST /api/cron/eod` with `Authorization: Bearer $CRON_SECRET` after 14
 ### Importing a portfolio from ATrad
 On the Portfolio page choose **Import from ATrad** (or **Sync from ATrad** once you have holdings) and pick the `.xlsx` you download from ATrad (Portfolio, Excel). The file is parsed in the browser; only symbol, quantity and total cost are sent. Costs come from ATrad's Total Cost (which already includes buying charges), and the export has no trade dates, so holdings start on the date you choose. After that, prices update automatically; sync again (or use New Trade) only after you buy or sell. Sales found by a re-sync are priced at today's price as an estimate, because the export has no sale prices.
 
+### My Position (per-holding insights)
+For a stock you own, the stock page shows a **My Position** tab (deep-linked from the dashboard Holdings table). It reconstructs a daily timeline since your first purchase from your transactions × daily closes (`lib/holding.ts`): stat tiles (invested, market value, unrealised P&L, return %), today's movement, a 1M–All range selector, and three charts — Investment vs Market Value, Total Gains (green above zero / red below), and Price vs your Average Cost (which steps as you buy more) — plus performance metrics (high/low, best/worst day) and an optional AI "Explain my position" (own Gemini key, facts only). All maths is in the app, unit-tested.
+
 ### Company pages
 Opening a stock shows four tabs (the tab is kept in the URL, e.g. `#announcements`):
 - **Overview:** the price chart and key stats, **price performance** (1 week to 1 year against the ASPI; price only, no dividends) and **peers** in the same CSE sector.

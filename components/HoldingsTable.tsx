@@ -66,7 +66,7 @@ export default function HoldingsTable({ holdings, onImport }: { holdings: Holdin
               {rows.map((h) => (
                 <tr key={h.symbol} className="border-t border-line hover:bg-subtle/60">
                   <td className="px-5 py-4">
-                    <Link href={`/stocks/${encodeURIComponent(h.symbol)}`} className="flex items-center gap-3">
+                    <Link href={`/stocks/${encodeURIComponent(h.symbol)}#my-position`} className="flex items-center gap-3">
                       <Badge symbol={h.symbol} sector={h.sector} />
                       <span className="leading-tight">
                         <span className="block font-semibold">{shortSymbol(h.symbol)}</span>

@@ -9,14 +9,15 @@ import AnnouncementsTab from "@/components/company/AnnouncementsTab";
 import FinancialsTab from "@/components/company/FinancialsTab";
 import PeersCard from "@/components/company/PeersCard";
 import PerformanceCard from "@/components/company/PerformanceCard";
+import MyPositionTab from "@/components/company/MyPositionTab";
 import { ErrorNote, Segmented, Skeleton, StaleBanner } from "@/components/ui";
 import type { HistoryResponse, MarketResponse, PortfolioResponse, StockResponse } from "@/lib/api-types";
 import { compact, fmtLKR, fmtPct, fmtPrice, fmtSigned, shortSymbol, toneBg, toneText } from "@/lib/format";
 import { useApi } from "@/lib/useApi";
 
 const RANGES = ["1D", "1W", "1M", "3M", "1Y", "All"] as const;
-const TABS = ["Overview", "Financials", "Announcements", "About"] as const;
-type Tab = (typeof TABS)[number];
+const BASE_TABS = ["Overview", "Financials", "Announcements", "About"] as const;
+const slug = (t: string) => t.toLowerCase().replace(/\s+/g, "-");
 
 function Stat({ label, value }: { label: string; value: React.ReactNode }) {
   return <div className="flex justify-between gap-4 border-b border-line py-2.5 text-sm"><dt className="text-muted">{label}</dt><dd className="money text-right font-semibold">{value}</dd></div>;
@@ -38,14 +39,11 @@ export default function StockPage({ params }: { params: Promise<{ symbol: string
   const { symbol: raw } = use(params);
   const symbol = decodeURIComponent(raw);
   const [range, setRange] = useState<(typeof RANGES)[number]>("1M");
-  const [tab, setTab] = useState<Tab>("Overview");
-  // Keep the tab in the URL (#financials) so a tab can be linked to and survives a refresh.
-  useEffect(() => {
-    const h = window.location.hash.slice(1).toLowerCase();
-    const match = TABS.find((t) => t.toLowerCase() === h);
-    if (match) setTab(match);
-  }, []);
-  const changeTab = (t: Tab) => { setTab(t); window.history.replaceState(null, "", `#${t.toLowerCase()}`); };
+  const [tab, setTab] = useState<string>("Overview");
+  // Keep the tab in the URL (#my-position) so a tab can be linked to and survives a refresh.
+  const [hash, setHash] = useState<string | null>(null);
+  useEffect(() => { setHash(window.location.hash.slice(1).toLowerCase() || null); }, []);
+  const changeTab = (t: string) => { setTab(t); window.history.replaceState(null, "", `#${slug(t)}`); };
   const { user } = useAuth();
   const { openTrade } = useTrade();
 
@@ -60,6 +58,10 @@ export default function StockPage({ params }: { params: Promise<{ symbol: string
 
   if (stock.error?.status === 404) return <div className="card p-8 text-center"><h1 className="text-lg font-semibold">We couldn&apos;t find &ldquo;{symbol}&rdquo;</h1><p className="mt-1 text-sm text-muted">Check the symbol and try again, or <Link href="/markets" className="font-medium text-brand">browse the market</Link>.</p></div>;
   if (stock.error && !stock.data) return <ErrorNote message={stock.error.message} onRetry={stock.reload} />;
+
+  const held = !!position;
+  const tabs = useMemo(() => (held ? ["Overview", "My Position", ...BASE_TABS.slice(1)] : [...BASE_TABS]), [held]);
+  useEffect(() => { if (hash) { const match = tabs.find((t) => slug(t) === hash); if (match) setTab(match); } }, [hash, tabs]);
 
   const q = stock.data?.quote, d = stock.data?.detail;
   return (
@@ -90,8 +92,9 @@ export default function StockPage({ params }: { params: Promise<{ symbol: string
         ) : <><Skeleton className="h-6 w-56" /><Skeleton className="mt-3 h-12 w-72" /></>}
       </section>
 
-      <Segmented options={TABS} value={tab} onChange={changeTab} />
+      <Segmented options={tabs} value={tab} onChange={changeTab} />
 
+      {tab === "My Position" && <MyPositionTab symbol={symbol} />}
       {tab === "Financials" && <FinancialsTab symbol={symbol} price={q?.price ?? null} marketCap={q?.marketCap ?? null} />}
       {tab === "Announcements" && <AnnouncementsTab symbol={symbol} />}
       {tab === "About" && <AboutTab symbol={symbol} />}

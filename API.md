@@ -38,6 +38,8 @@ User data (watchlists, transactions) lives in Supabase Postgres with row-level s
 | `GET /api/companies/:symbol/announcements/:id` | One announcement's headline, dividend or dealing details and PDF links (only this company's ids are accepted) |
 | `GET /api/companies/:symbol/peers` | Largest companies in the same CSE sector. Sector data fills in over time (`known` of `all`) |
 | `GET /api/stocks/:symbol/performance` | Price return over 1W, 1M, 3M, 6M, YTD and 1Y next to the ASPI |
+| `GET /api/stocks/:symbol/position` | Signed in. Your holding plus a daily timeline since first purchase (quantity, cost, avg cost, market value, gain) for the My Position charts; `held:false` if you don't own it |
+| `POST /api/stocks/:symbol/position/explain` | Signed in, header `x-gemini-key`. Plain-English write-up of your position. 30 per hour |
 | `POST /api/companies/:symbol/explain {announcementId}` | Signed in, header `x-gemini-key`. Plain-English explanation of one announcement. 40 per hour |
 | `POST /api/companies/:symbol/brief` | Signed in, header `x-gemini-key`. Short factual company brief. 20 per hour |
 
