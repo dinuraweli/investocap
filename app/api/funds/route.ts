@@ -1,10 +1,11 @@
-import type { NextRequest } from "next/server";
-import { getFunds } from "@/lib/funds/service";
+import { after, type NextRequest } from "next/server";
+import { getFunds, persistFunds } from "@/lib/funds/service";
 import { handle, json } from "@/lib/http";
 
 /** All Sri Lankan unit trusts with current NAVs (public, from UTASL). Optional ?q= and ?type= filters. */
 export const GET = handle(async (req: NextRequest) => {
   const { value, fetchedAt, stale } = await getFunds();
+  if (!stale) after(() => persistFunds(value)); // record funds + today's NAV reliably, after the response
   const q = req.nextUrl.searchParams.get("q")?.trim().toLowerCase() ?? "";
   const type = req.nextUrl.searchParams.get("type")?.trim() ?? "";
   let funds = value;

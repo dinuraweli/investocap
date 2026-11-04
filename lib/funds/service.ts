@@ -14,9 +14,7 @@ export function getFunds() {
 
 async function loadFunds(): Promise<Fund[]> {
   try {
-    const funds = await fetchUnitPrices();
-    persist(funds); // best effort; never block serving live NAVs
-    return funds;
+    return await fetchUnitPrices();
   } catch (e) {
     const stored = await store.latestFundsFromDb();
     if (stored.length > 0) { console.warn("[funds] using stored NAVs:", (e as Error).message); return stored; }
@@ -24,16 +22,20 @@ async function loadFunds(): Promise<Fund[]> {
   }
 }
 
-// Persist the fund list and today's NAV snapshot at most once an hour (NAVs change daily).
+// Persist the fund list and today's NAV snapshot, at most once an hour (NAVs change daily). Call this via the
+// route's after() hook so the write is NOT cut off when the serverless function freezes after responding.
 const g = globalThis as unknown as { __fundsPersist?: number };
-function persist(funds: Fund[]) {
+export async function persistFunds(funds: Fund[]): Promise<void> {
   const now = Date.now();
-  if (g.__fundsPersist && now - g.__fundsPersist < 3600_000) return;
+  if (funds.length === 0 || (g.__fundsPersist && now - g.__fundsPersist < 3600_000)) return;
   g.__fundsPersist = now;
-  (async () => {
+  try {
     await store.upsertFunds(funds);
     await store.saveNavSnapshot(colomboDate(now), funds);
-  })().catch((e) => { g.__fundsPersist = undefined; console.error("[funds persist]", e); });
+  } catch (e) {
+    g.__fundsPersist = undefined;
+    console.error("[funds persist]", (e as Error).message);
+  }
 }
 
 export const getFund = (slug: string) => cached(`fund:${slug}`, TTL, async () => {
