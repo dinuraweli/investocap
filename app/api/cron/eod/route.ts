@@ -1,6 +1,7 @@
 import { timingSafeEqual } from "node:crypto";
 import type { NextRequest } from "next/server";
 import { snapshotEndOfDay } from "@/lib/cse/service";
+import { snapshotFunds } from "@/lib/funds/service";
 import { fail, handle, json } from "@/lib/http";
 
 // Runs after market close (14:30 SLT). vercel.json schedules it daily (Mon-Fri 10:00 UTC = 15:30 SLT);
@@ -12,7 +13,12 @@ const run = handle(async (req: NextRequest) => {
   const given = Buffer.from(req.headers.get("authorization")?.replace(/^Bearer /, "") ?? "");
   const want = Buffer.from(secret);
   if (given.length !== want.length || !timingSafeEqual(given, want)) return fail(401, "Unauthorized");
-  return json(await snapshotEndOfDay());
+  // Unit-trust NAVs are independent of the stock market; a UTASL failure must not fail the stock snapshot.
+  const [market, funds] = await Promise.allSettled([snapshotEndOfDay(), snapshotFunds()]);
+  return json({
+    market: market.status === "fulfilled" ? market.value : { error: (market.reason as Error).message },
+    funds: funds.status === "fulfilled" ? funds.value : { error: (funds.reason as Error).message },
+  });
 });
 
 export const GET = run;

@@ -46,3 +46,8 @@ export interface ReportsResponse { symbol: string; name: string; stale: boolean;
 export interface SavedAnalysis {
   reportId: number; symbol: string; kind: "annual" | "quarterly" | "other"; title: string; reportDate: string | null; pdfPath: string; model: string; createdAt: string; analysis: ReportAnalysis; cached?: boolean;
 }
+
+import type { Fund, FundType } from "./funds/utasl.ts";
+export type { Fund, FundType };
+export interface FundsResponse { fetchedAt: number; stale: boolean; total: number; counts: Record<string, number>; managers: number; funds: Fund[] }
+export interface FundResponse { fund: Fund; history: { date: string; sell: number; buy: number | null }[] }
