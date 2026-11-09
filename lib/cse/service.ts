@@ -234,11 +234,17 @@ import * as sentimentStore from "../db/sentiment.ts";
 
 export const getSentimentHistory = () => cached("sentHist", TTL.sectors, () => sentimentStore.readSentimentHistory());
 
-/** Record today's mood score (called by the EOD cron and, best-effort, after a sentiment page view). */
+/** DB-only write of one day's mood score. Safe to call from a route's after() hook (no network recomputation). */
+export async function recordSentiment(breadth: Breadth, date: string): Promise<void> {
+  if (breadth.advancers + breadth.decliners === 0) return; // market not trading yet
+  await sentimentStore.saveSentimentPoint({ date, score: breadth.score, label: breadth.label, advancers: breadth.advancers, decliners: breadth.decliners });
+}
+
+/** Record today's mood score, recomputing from scratch (called by the EOD cron, which awaits it fully). */
 export async function snapshotSentiment(): Promise<{ date: string; score: number } | { skipped: string }> {
   const { breadth } = await getBreadth();
   if (breadth.advancers + breadth.decliners === 0) return { skipped: "market not trading yet" };
   const date = await getSessionDate();
-  await sentimentStore.saveSentimentPoint({ date, score: breadth.score, label: breadth.label, advancers: breadth.advancers, decliners: breadth.decliners });
+  await recordSentiment(breadth, date);
   return { date, score: breadth.score };
 }
