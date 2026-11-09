@@ -1,6 +1,6 @@
 import { timingSafeEqual } from "node:crypto";
 import type { NextRequest } from "next/server";
-import { snapshotEndOfDay } from "@/lib/cse/service";
+import { snapshotEndOfDay, snapshotSentiment } from "@/lib/cse/service";
 import { snapshotFunds } from "@/lib/funds/service";
 import { fail, handle, json } from "@/lib/http";
 
@@ -14,10 +14,11 @@ const run = handle(async (req: NextRequest) => {
   const want = Buffer.from(secret);
   if (given.length !== want.length || !timingSafeEqual(given, want)) return fail(401, "Unauthorized");
   // Unit-trust NAVs are independent of the stock market; a UTASL failure must not fail the stock snapshot.
-  const [market, funds] = await Promise.allSettled([snapshotEndOfDay(), snapshotFunds()]);
+  const [market, funds, sentiment] = await Promise.allSettled([snapshotEndOfDay(), snapshotFunds(), snapshotSentiment()]);
   return json({
     market: market.status === "fulfilled" ? market.value : { error: (market.reason as Error).message },
     funds: funds.status === "fulfilled" ? funds.value : { error: (funds.reason as Error).message },
+    sentiment: sentiment.status === "fulfilled" ? sentiment.value : { error: (sentiment.reason as Error).message },
   });
 });
 

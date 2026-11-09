@@ -51,3 +51,15 @@ import type { Fund, FundType } from "./funds/utasl.ts";
 export type { Fund, FundType };
 export interface FundsResponse { fetchedAt: number; stale: boolean; total: number; counts: Record<string, number>; managers: number; funds: Fund[] }
 export interface FundResponse { fund: Fund; history: { date: string; sell: number; buy: number | null }[] }
+
+import type { Breadth, DealingsSummary, Reaction } from "./sentiment.ts";
+export type { Breadth, Reaction };
+export interface SentimentResponse {
+  breadth: Breadth;
+  dealings: (DealingsSummary & { from: string | null; to: string | null; stale: boolean }) | null;
+  history: { date: string; score: number; label: string; advancers: number; decliners: number }[];
+  fetchedAt: number;
+  stale: boolean;
+}
+export interface HoldingEvent { symbol: string; name: string; announcement: { category: string; group: string; date: string }; reaction: Reaction }
+export interface SentimentHoldingsResponse { events: HoldingEvent[]; held: number }

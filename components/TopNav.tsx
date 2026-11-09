@@ -8,6 +8,7 @@ import { useAuth, useTrade } from "./Providers";
 const TABS = [
   { href: "/", label: "Portfolio" },
   { href: "/markets", label: "Markets" },
+  { href: "/sentiment", label: "Sentiment" },
   { href: "/watchlist", label: "Watchlist" },
   { href: "/reports", label: "Reports" },
   { href: "/funds", label: "Funds" },

@@ -63,19 +63,19 @@ Guiding principle: **track and inform, don't recommend** — descriptive facts a
 - 💡 Dividend ex-date / payment reminders
 - 💡 Delivery: in-app centre first; email/web-push later (cron infra already exists)
 
-## 8. Market sentiment & news impact  🔜
-Build from data we already have; stays descriptive (no predictions).
-- 🔜 **Market-internals sentiment**: breadth, turnover trend, % of stocks above 50-day avg, new highs vs lows, sector momentum
-- 🔜 **Net director dealings** across the market (insider buy/sell signal, from the dealings feed)
-- 🔜 **Event impact**: a stock's actual price reaction in the days after an announcement
-- 🔜 Announcement **tone** via Gemini (describe the news, not the price)
-- 🔬 Optional phase 2: external news feed (Daily FT / EconomyNext RSS) — dependency & ToS to assess
+## 8. Market sentiment & news impact
+Descriptive only (no predictions). Lives at `/sentiment`.
+- ✅ **Market-mood score** (0–100) + breadth internals: advancers/decliners, A/D ratio, up vs down volume & turnover, sector breadth
+- ✅ **Net director dealings** across the market (insider buy/sell value + biggest trades, from the approved-announcement feed)
+- ✅ **Event impact**: each holding's most recent announcement and the share-price reaction after it
+- ✅ Daily mood-score snapshot → trend chart (builds up over time)
+- 💡 % of stocks above 50-day avg, new 52-week highs vs lows (need more price history; fill in as it grows)
+- 🔬 Optional: announcement tone via Gemini; external news feed (Daily FT / EconomyNext RSS)
 
-## 9. Unit trusts (trust funds)  🔨
+## 9. Unit trusts (trust funds)
 Source: **utasl.lk** `/unit-prices/` — daily NAVs for ~65 funds across 13 managers (parseable HTML). The 3 CSE-listed closed-end funds (`.U`) already come free via the CSE feed.
-- 🔨 UTASL NAV parser + service + daily snapshot storage
-- 🔨 Browse page: all funds with buying/selling price, manager, search & filter
-- 🔜 Per-fund page: NAV history chart (built from our daily snapshots)
+- ✅ UTASL NAV parser + service + daily snapshot storage
+- ✅ Browse page (`/funds`) + per-fund NAV-history page: buying/selling price, manager, search & filter
 - 🔜 **Manual unit-trust holdings** in the portfolio (units + cost; value at current NAV; gain/loss) — unlocks "whole net worth in one place"
 - 🔬 Historical NAV before our snapshots start (monthly UTASL performance-report PDFs)
 
@@ -86,4 +86,4 @@ Source: **utasl.lk** `/unit-prices/` — daily NAVs for ~65 funds across 13 mana
 
 ---
 
-_Last updated: 2026-11-04. Edit this file as items ship; tick ✅ and move things between sections._
+_Last updated: 2026-11-09. Edit this file as items ship; tick ✅ and move things between sections._

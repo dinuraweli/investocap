@@ -313,3 +313,31 @@ export async function fetchAnnouncementDetail(id: number): Promise<AnnouncementD
 
 /** Download an announcement's PDF (small documents only: it is read alongside the text, not analysed like a report). */
 export const fetchAnnouncementPdf = (path: string, maxBytes = 3 * 1024 * 1024) => fetchCdnPdf(path, isAnnouncementDocPath, maxBytes);
+
+// ---- market-wide announcements (approved feed, ~9 days) --------------------------------------
+
+import { parseCseDate } from "./company.ts";
+
+export interface MarketAnnouncement {
+  announcementId: number;
+  category: string;
+  company: string;
+  symbol: string | null;
+  date: string | null; // YYYY-MM-DD
+}
+
+/** The CSE's approved-announcements feed: everything market-wide from roughly the last 9 days. */
+export async function fetchMarketAnnouncements(): Promise<MarketAnnouncement[]> {
+  const json = obj(await post("approvedAnnouncement"), "approvedAnnouncement");
+  const rows = arr(json.approvedAnnouncements, "approvedAnnouncement.approvedAnnouncements");
+  const out: MarketAnnouncement[] = [];
+  for (const raw of rows) {
+    if (!isObj(raw)) continue;
+    const id = numOr(raw as Obj, "announcementId", null);
+    const category = strOrNull(raw as Obj, "announcementCategory");
+    const company = strOrNull(raw as Obj, "company");
+    if (id === null || !category || !company) continue;
+    out.push({ announcementId: id, category, company, symbol: strOrNull(raw as Obj, "symbol"), date: parseCseDate((raw as Obj).dateOfAnnouncement) });
+  }
+  return out;
+}

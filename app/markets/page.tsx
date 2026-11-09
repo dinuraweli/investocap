@@ -54,6 +54,7 @@ export default function Markets() {
     <div className="space-y-4">
       <div className="flex flex-wrap items-end justify-between gap-2">
         <h1 className="text-xl font-semibold">Markets</h1>
+        <Link href="/sentiment" className="text-sm font-medium text-brand hover:underline">Market sentiment →</Link>
         {m && <p className="text-sm text-muted"><span className={`mr-2 rounded-full px-2.5 py-1 text-xs font-semibold ${m.status.open ? "bg-gain-soft text-gain" : "bg-subtle"}`}>{m.status.status}</span>Updated {timeAgo(m.fetchedAt)}</p>}
       </div>
       {market.error && <ErrorNote message={market.error.message} onRetry={market.reload} />}

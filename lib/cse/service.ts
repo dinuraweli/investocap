@@ -198,3 +198,47 @@ export async function getPeers(quote: Quote): Promise<Peers & { known: number; a
   const rows: PeerRow[] = quotes.value.map((q) => ({ symbol: q.symbol, name: q.name, sector: bySector.get(q.symbol) ?? null, price: q.price, changePct: q.changePct, marketCap: q.marketCap }));
   return { ...selectPeers(quote.symbol, rows), known: bySector.size, all: quotes.value.length };
 }
+
+// ---- market sentiment -----------------------------------------------------------------------------
+
+import { aggregateDealings, computeBreadth, type Breadth, type DealingRecord, type DealingsSummary } from "../sentiment.ts";
+
+/** Breadth internals and the composite mood score for the latest session. */
+export async function getBreadth(): Promise<{ breadth: Breadth; fetchedAt: number; stale: boolean }> {
+  const [quotes, sectors] = await Promise.all([getQuotes(), getSectors().catch(() => ({ value: [], stale: true, fetchedAt: Date.now() }))]);
+  const breadth = computeBreadth(quotes.value, sectors.value);
+  return { breadth, fetchedAt: quotes.fetchedAt, stale: quotes.stale || sectors.stale };
+}
+
+const DEALINGS_CAP = 40; // approvedAnnouncement spans ~9 days; cap the detail fetches
+
+/** Net director-dealing signal over the market's recent approved announcements. */
+export function getDirectorDealings() {
+  return cached("dealings", TTL.sectors * 2, async (): Promise<DealingsSummary & { from: string | null; to: string | null }> => {
+    const anns = await cse.fetchMarketAnnouncements();
+    const dealings = anns.filter((a) => /dealings by directors/i.test(a.category)).slice(0, DEALINGS_CAP);
+    const records: DealingRecord[] = [];
+    for (let i = 0; i < dealings.length; i += 6) {
+      const batch = await Promise.allSettled(dealings.slice(i, i + 6).map(async (a) => {
+        const detail = (await getAnnouncementDetail(a.announcementId)).value;
+        if (detail?.dealing) records.push({ announcementId: a.announcementId, company: a.company, symbol: a.symbol, date: a.date ?? detail.date, director: detail.dealing.director, transactions: detail.dealing.transactions });
+      }));
+      batch.forEach((r) => r.status === "rejected" && console.warn("[dealings]", (r.reason as Error).message));
+    }
+    const dates = anns.map((a) => a.date).filter((d): d is string => !!d).sort();
+    return { ...aggregateDealings(records), from: dates[0] ?? null, to: dates[dates.length - 1] ?? null };
+  });
+}
+
+import * as sentimentStore from "../db/sentiment.ts";
+
+export const getSentimentHistory = () => cached("sentHist", TTL.sectors, () => sentimentStore.readSentimentHistory());
+
+/** Record today's mood score (called by the EOD cron and, best-effort, after a sentiment page view). */
+export async function snapshotSentiment(): Promise<{ date: string; score: number } | { skipped: string }> {
+  const { breadth } = await getBreadth();
+  if (breadth.advancers + breadth.decliners === 0) return { skipped: "market not trading yet" };
+  const date = await getSessionDate();
+  await sentimentStore.saveSentimentPoint({ date, score: breadth.score, label: breadth.label, advancers: breadth.advancers, decliners: breadth.decliners });
+  return { date, score: breadth.score };
+}

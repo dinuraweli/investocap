@@ -43,6 +43,12 @@ User data (watchlists, transactions) lives in Supabase Postgres with row-level s
 | `POST /api/companies/:symbol/explain {announcementId}` | Signed in, header `x-gemini-key`. Plain-English explanation of one announcement. 40 per hour |
 | `POST /api/companies/:symbol/brief` | Signed in, header `x-gemini-key`. Short factual company brief. 20 per hour |
 
+## Market sentiment
+| Route | Purpose |
+|---|---|
+| `GET /api/sentiment` | Public. Breadth internals + 0–100 mood score, net director dealings, and the mood-score history |
+| `GET /api/sentiment/holdings` | Signed in. Each holding's most recent announcement and the price reaction after it |
+
 ## Reports (Gemini analyser)
 | Route | Purpose |
 |---|---|
