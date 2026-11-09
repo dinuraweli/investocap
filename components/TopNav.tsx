@@ -66,6 +66,7 @@ export default function TopNav() {
               {menu && (
                 <div className="absolute right-0 z-40 mt-2 w-48 rounded-xl border border-line bg-surface p-1 shadow-lg">
                   <div className="truncate px-3 py-2 text-xs text-muted lg:hidden">{user.email}</div>
+                  <Link href="/changelog" onClick={() => setMenu(false)} className="block rounded-lg px-3 py-2 text-sm hover:bg-subtle">What&apos;s new</Link>
                   <button onClick={() => { setMenu(false); logout().then(() => router.push("/")); }} className="w-full rounded-lg px-3 py-2 text-left text-sm hover:bg-subtle">Sign out</button>
                 </div>
               )}
